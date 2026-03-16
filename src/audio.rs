@@ -5,19 +5,19 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[cfg(windows)]
-use windows::Win32::Media::Audio::*;
+use std::sync::{Condvar, Mutex};
+#[cfg(windows)]
+use windows::core::Interface;
+#[cfg(windows)]
+use windows::Win32::Foundation::*;
 #[cfg(windows)]
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+#[cfg(windows)]
+use windows::Win32::Media::Audio::*;
 #[cfg(windows)]
 use windows::Win32::System::Com::*;
 #[cfg(windows)]
 use windows::Win32::System::Threading::*;
-#[cfg(windows)]
-use windows::Win32::Foundation::*;
-#[cfg(windows)]
-use windows::core::Interface;
-#[cfg(windows)]
-use std::sync::{Condvar, Mutex};
 
 #[derive(Debug, Clone)]
 pub enum StreamState {
@@ -100,12 +100,14 @@ impl AudioStreamer {
         let tx = self.event_tx.clone();
         let running = self.running.clone();
 
-        self.thread = Some(std::thread::Builder::new()
-            .name("pulse-stream-audio".to_string())
-            .spawn(move || {
-                run_loop(&tx, &running, &server, port, rate, channels, process_id);
-            })
-            .expect("failed to spawn audio thread"));
+        self.thread = Some(
+            std::thread::Builder::new()
+                .name("pulse-stream-audio".to_string())
+                .spawn(move || {
+                    run_loop(&tx, &running, &server, port, rate, channels, process_id);
+                })
+                .expect("failed to spawn audio thread"),
+        );
     }
 
     pub fn stop(&mut self) {
@@ -140,11 +142,8 @@ pub fn get_output_devices() -> Vec<DeviceInfo> {
         // Initialize as STA (compatible with winit's later OleInitialize).
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
 
-        let co_result = CoCreateInstance::<_, IMMDeviceEnumerator>(
-            &MMDeviceEnumerator,
-            None,
-            CLSCTX_ALL,
-        );
+        let co_result =
+            CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL);
 
         let Ok(enumerator) = co_result else {
             return devices;
@@ -170,8 +169,8 @@ pub fn get_output_devices() -> Vec<DeviceInfo> {
                     })
                     .unwrap_or_default();
 
-                let name = get_device_name(&device)
-                    .unwrap_or_else(|| format!("Audio Device {}", i + 1));
+                let name =
+                    get_device_name(&device).unwrap_or_else(|| format!("Audio Device {}", i + 1));
 
                 devices.push(DeviceInfo { id: id_str, name });
             }
@@ -228,11 +227,9 @@ pub fn get_audio_processes() -> Vec<ProcessInfo> {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
 
-        let Ok(enumerator) = CoCreateInstance::<_, IMMDeviceEnumerator>(
-            &MMDeviceEnumerator,
-            None,
-            CLSCTX_ALL,
-        ) else {
+        let Ok(enumerator) =
+            CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
+        else {
             return result;
         };
 
@@ -240,8 +237,7 @@ pub fn get_audio_processes() -> Vec<ProcessInfo> {
             return result;
         };
 
-        let Ok(session_mgr): Result<IAudioSessionManager2, _> =
-            device.Activate(CLSCTX_ALL, None)
+        let Ok(session_mgr): Result<IAudioSessionManager2, _> = device.Activate(CLSCTX_ALL, None)
         else {
             return result;
         };
@@ -285,8 +281,8 @@ pub fn get_audio_processes() -> Vec<ProcessInfo> {
 
 #[cfg(windows)]
 fn get_process_name(pid: u32) -> Option<String> {
-    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
     use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
@@ -326,7 +322,10 @@ fn run_loop(
 ) {
     while running.load(Ordering::Relaxed) {
         let _ = tx.send(AudioEvent::StateChanged(StreamState::Connecting));
-        let _ = tx.send(AudioEvent::Log(format!("Connecting to {}:{}...", server, port)));
+        let _ = tx.send(AudioEvent::Log(format!(
+            "Connecting to {}:{}...",
+            server, port
+        )));
 
         match do_stream(tx, running, server, port, rate, channels, process_id) {
             Ok(()) => {}
@@ -418,7 +417,9 @@ unsafe fn activate_process_loopback(pid: u32) -> Result<IAudioClient, Box<dyn st
     let (lock, cvar) = &*setup;
     let mut completed = lock.lock().unwrap();
     while !*completed {
-        let (c, timeout) = cvar.wait_timeout(completed, Duration::from_secs(5)).unwrap();
+        let (c, timeout) = cvar
+            .wait_timeout(completed, Duration::from_secs(5))
+            .unwrap();
         completed = c;
         if timeout.timed_out() {
             return Err("Process loopback activation timed out".into());
@@ -451,7 +452,8 @@ fn do_stream(
     let mut tcp = TcpStream::connect(format!("{}:{}", server, port))?;
     tcp.set_nodelay(true)?;
     tcp.set_write_timeout(Some(Duration::from_secs(3)))?;
-    set_send_buffer(&tcp, 4096);
+    // Tiny send buffer to prevent OS from batching/delaying small writes
+    set_send_buffer(&tcp, 1920);
 
     let _ = tx.send(AudioEvent::StateChanged(StreamState::Connected));
     let _ = tx.send(AudioEvent::Log(format!("Connected to {}:{}", server, port)));
@@ -459,21 +461,24 @@ fn do_stream(
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
 
-        let enumerator: IMMDeviceEnumerator = CoCreateInstance(
-            &MMDeviceEnumerator,
-            None,
-            CLSCTX_ALL,
-        )?;
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
         let device = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia)?;
 
         // Always get volume from default device
         let ep_vol: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None)?;
         let mut cached_volume = ep_vol.GetMasterVolumeLevelScalar()?;
-        let mut cached_mute = { let b: BOOL = ep_vol.GetMute()?; b.as_bool() };
-        let _ = tx.send(AudioEvent::VolumeChanged { volume: cached_volume, muted: cached_mute });
+        let mut cached_mute = {
+            let b: BOOL = ep_vol.GetMute()?;
+            b.as_bool()
+        };
+        let _ = tx.send(AudioEvent::VolumeChanged {
+            volume: cached_volume,
+            muted: cached_mute,
+        });
 
-        // 20ms buffer in 100ns units
-        let buffer_duration: i64 = 200_000;
+        // 10ms buffer in 100ns units — lower = less capture latency
+        let buffer_duration: i64 = 100_000;
 
         let event_handle = CreateEventW(
             None,
@@ -483,8 +488,8 @@ fn do_stream(
         )?;
 
         // Branch: per-process or system-wide capture
-        let (client, src_rate_val, src_ch_val, src_bits_val, is_float)
-            = if let Some(pid) = process_id {
+        let (client, src_rate_val, src_ch_val, src_bits_val, is_float) =
+            if let Some(pid) = process_id {
                 let _ = tx.send(AudioEvent::Log(format!("Per-app capture: PID {}", pid)));
                 let client = activate_process_loopback(pid)?;
 
@@ -576,13 +581,8 @@ fn do_stream(
                     let mut num_frames = 0u32;
                     let mut flags = 0u32;
 
-                    let hr = capture.GetBuffer(
-                        &mut buffer_ptr,
-                        &mut num_frames,
-                        &mut flags,
-                        None,
-                        None,
-                    );
+                    let hr =
+                        capture.GetBuffer(&mut buffer_ptr, &mut num_frames, &mut flags, None, None);
 
                     if hr.is_err() || num_frames == 0 {
                         let _ = capture.ReleaseBuffer(0);
@@ -594,27 +594,30 @@ fn do_stream(
 
                     float_buf.clear();
                     if is_float {
-                        let floats = std::slice::from_raw_parts(
-                            buffer_ptr as *const f32,
-                            sample_count,
-                        );
+                        let floats =
+                            std::slice::from_raw_parts(buffer_ptr as *const f32, sample_count);
                         float_buf.extend_from_slice(floats);
                     } else {
-                        let shorts = std::slice::from_raw_parts(
-                            buffer_ptr as *const i16,
-                            sample_count,
-                        );
+                        let shorts =
+                            std::slice::from_raw_parts(buffer_ptr as *const i16, sample_count);
                         float_buf.extend(shorts.iter().map(|&s| s as f32 / 32768.0));
                     }
 
                     let _ = capture.ReleaseBuffer(num_frames);
 
-                    let vol = if cached_mute { 0.0 } else { cached_volume };
+                    let vol = if cached_mute { 0.0f32 } else { cached_volume };
+                    let byte_len = sample_count * 2;
                     pcm_buf.clear();
-                    for &s in &float_buf {
-                        let scaled = (s * vol).clamp(-1.0, 1.0);
-                        let v = (scaled * 32767.0) as i16;
-                        pcm_buf.extend_from_slice(&v.to_le_bytes());
+                    if pcm_buf.capacity() < byte_len {
+                        pcm_buf.reserve(byte_len - pcm_buf.capacity());
+                    }
+                    pcm_buf.set_len(byte_len);
+                    let pcm_i16 = std::slice::from_raw_parts_mut(
+                        pcm_buf.as_mut_ptr() as *mut i16,
+                        sample_count,
+                    );
+                    for (out, &s) in pcm_i16.iter_mut().zip(float_buf.iter()) {
+                        *out = ((s * vol).clamp(-1.0, 1.0) * 32767.0) as i16;
                     }
 
                     if let Err(e) = tcp.write_all(&pcm_buf) {
@@ -653,7 +656,10 @@ fn do_stream(
                     if (v - cached_volume).abs() > 0.001 || new_mute != cached_mute {
                         cached_volume = v;
                         cached_mute = new_mute;
-                        let _ = tx.send(AudioEvent::VolumeChanged { volume: v, muted: new_mute });
+                        let _ = tx.send(AudioEvent::VolumeChanged {
+                            volume: v,
+                            muted: new_mute,
+                        });
                     }
                 }
             }
@@ -678,7 +684,9 @@ fn do_stream(
     _target_channels: u16,
     _process_id: Option<u32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let _ = tx.send(AudioEvent::Log("WASAPI only available on Windows".to_string()));
+    let _ = tx.send(AudioEvent::Log(
+        "WASAPI only available on Windows".to_string(),
+    ));
     Err("unsupported platform".into())
 }
 
@@ -691,10 +699,15 @@ fn set_send_buffer(tcp: &TcpStream, size: u32) {
     let raw = tcp.as_raw_socket();
     let val = size as i32;
     unsafe {
-        setsockopt(raw as usize, 0xFFFF, 0x1001, &val as *const i32 as *const u8, 4);
+        setsockopt(
+            raw as usize,
+            0xFFFF,
+            0x1001,
+            &val as *const i32 as *const u8,
+            4,
+        );
     }
 }
 
 #[cfg(not(windows))]
 fn set_send_buffer(_tcp: &TcpStream, _size: u32) {}
-

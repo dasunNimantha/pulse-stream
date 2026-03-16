@@ -1,12 +1,11 @@
 use crate::app::AppState;
 use crate::message::Message;
 use crate::theme::{
-    get_colors, CardStyle, CheckStyle, DangerButtonStyle, InputStyle, MenuStyle,
-    PanelStyle, PickListStyle, PrimaryButtonStyle, ToggleStyle, ThemeMode,
+    get_colors, CardStyle, CheckStyle, DangerButtonStyle, InputStyle, MenuStyle, PanelStyle,
+    PickListStyle, PrimaryButtonStyle, ThemeMode, ToggleStyle,
 };
 use iced::widget::{
-    button, checkbox, column, container, pick_list, row, text, text_input, Column,
-    Row, Space,
+    button, checkbox, column, container, pick_list, row, text, text_input, Column, Row, Space,
 };
 use iced::{Alignment, Element, Length, Theme};
 use iced_aw::core::icons::bootstrap::{icon_to_text, Bootstrap};
@@ -132,9 +131,13 @@ fn build_header(state: &AppState, mode: ThemeMode) -> Element<'_, Message> {
             status_items,
             Space::with_width(Length::Fill),
             row![
-                text(if mode == ThemeMode::Dark { "Dark" } else { "Light" })
-                    .size(11)
-                    .style(iced::theme::Text::Color(colors.text_secondary)),
+                text(if mode == ThemeMode::Dark {
+                    "Dark"
+                } else {
+                    "Light"
+                })
+                .size(11)
+                .style(iced::theme::Text::Color(colors.text_secondary)),
                 Space::with_width(6),
                 checkbox("", mode == ThemeMode::Light)
                     .on_toggle(|_| Message::ToggleTheme)
@@ -158,7 +161,11 @@ fn build_header(state: &AppState, mode: ThemeMode) -> Element<'_, Message> {
 fn build_main_panel(state: &AppState, mode: ThemeMode) -> Element<'_, Message> {
     let mut content: Column<Message> = column![].spacing(0).width(Length::Fill);
 
-    content = content.push(section_header("Connection", Bootstrap::HddNetworkFill, mode));
+    content = content.push(section_header(
+        "Connection",
+        Bootstrap::HddNetworkFill,
+        mode,
+    ));
     content = content.push(Space::with_height(8));
     content = content.push(build_connection_fields(state, mode));
     content = content.push(Space::with_height(12));
@@ -191,8 +198,10 @@ fn build_main_panel(state: &AppState, mode: ThemeMode) -> Element<'_, Message> {
     container(content)
         .padding(12)
         .width(Length::Fill)
-        .style(iced::theme::Container::Custom(Box::new(PanelStyle { mode })))
-    .into()
+        .style(iced::theme::Container::Custom(Box::new(PanelStyle {
+            mode,
+        })))
+        .into()
 }
 
 fn section_header<'a>(title: &str, icon: Bootstrap, mode: ThemeMode) -> Element<'a, Message> {
@@ -239,10 +248,12 @@ fn build_connection_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Mes
     let server_err = !state.server.is_empty() && !is_valid_server(&state.server);
     let port_err = !state.port.is_empty() && !is_valid_port(&state.port);
 
-    let scan_content = row![
-        icon_to_text(if state.scanning { Bootstrap::ArrowRepeat } else { Bootstrap::Wifi })
-            .size(11.0),
-    ]
+    let scan_content = row![icon_to_text(if state.scanning {
+        Bootstrap::ArrowRepeat
+    } else {
+        Bootstrap::Wifi
+    })
+    .size(11.0),]
     .align_items(Alignment::Center);
 
     let mut scan_btn = button(scan_content)
@@ -261,7 +272,10 @@ fn build_connection_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Mes
             .on_input(Message::ServerChanged)
             .padding([6, 10])
             .size(13)
-            .style(iced::theme::TextInput::Custom(Box::new(InputStyle { mode, error: server_err }))),
+            .style(iced::theme::TextInput::Custom(Box::new(InputStyle {
+                mode,
+                error: server_err
+            }))),
         Space::with_width(6),
         scan_btn,
         Space::with_width(10),
@@ -276,7 +290,10 @@ fn build_connection_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Mes
             .padding([6, 10])
             .size(13)
             .width(70)
-            .style(iced::theme::TextInput::Custom(Box::new(InputStyle { mode, error: port_err }))),
+            .style(iced::theme::TextInput::Custom(Box::new(InputStyle {
+                mode,
+                error: port_err
+            }))),
     ]
     .align_items(Alignment::Center)
     .into()
@@ -309,14 +326,18 @@ fn build_audio_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Message>
         Space::with_height(6),
         row![
             field_label("App", mode),
-            pick_list(process_names, Some(selected_process), Message::ProcessSelected)
-                .padding([6, 10])
-                .text_size(13)
-                .width(Length::Fill)
-                .style(iced::theme::PickList::Custom(
-                    std::rc::Rc::new(PickListStyle { mode }),
-                    std::rc::Rc::new(MenuStyle { mode }),
-                )),
+            pick_list(
+                process_names,
+                Some(selected_process),
+                Message::ProcessSelected
+            )
+            .padding([6, 10])
+            .text_size(13)
+            .width(Length::Fill)
+            .style(iced::theme::PickList::Custom(
+                std::rc::Rc::new(PickListStyle { mode }),
+                std::rc::Rc::new(MenuStyle { mode }),
+            )),
         ]
         .align_items(Alignment::Center),
     ]
@@ -334,7 +355,10 @@ fn build_format_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Message
             .on_input(Message::RateChanged)
             .padding([6, 10])
             .size(13)
-            .style(iced::theme::TextInput::Custom(Box::new(InputStyle { mode, error: rate_err }))),
+            .style(iced::theme::TextInput::Custom(Box::new(InputStyle {
+                mode,
+                error: rate_err
+            }))),
         Space::with_width(12),
         container(
             text("Channels")
@@ -347,7 +371,10 @@ fn build_format_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Message
             .padding([6, 10])
             .size(13)
             .width(50)
-            .style(iced::theme::TextInput::Custom(Box::new(InputStyle { mode, error: ch_err }))),
+            .style(iced::theme::TextInput::Custom(Box::new(InputStyle {
+                mode,
+                error: ch_err
+            }))),
     ]
     .align_items(Alignment::Center)
     .into()
@@ -435,12 +462,32 @@ fn build_stats_footer(state: &AppState, mode: ThemeMode) -> Element<'_, Message>
     let colors = get_colors(mode);
     let has_stats = !state.stats_bitrate.is_empty();
 
-    let bitrate_text = if has_stats { &state.stats_bitrate } else { "-- kbps  --ms" };
-    let format_text = if has_stats { &state.stats_format } else { "---" };
-    let uptime_text = if has_stats { &state.stats_uptime } else { "--:--:--" };
+    let bitrate_text = if has_stats {
+        &state.stats_bitrate
+    } else {
+        "-- kbps  --ms"
+    };
+    let format_text = if has_stats {
+        &state.stats_format
+    } else {
+        "---"
+    };
+    let uptime_text = if has_stats {
+        &state.stats_uptime
+    } else {
+        "--:--:--"
+    };
 
-    let dim = if has_stats { colors.text_secondary } else { colors.text_disabled };
-    let accent = if has_stats { colors.accent } else { colors.text_disabled };
+    let dim = if has_stats {
+        colors.text_secondary
+    } else {
+        colors.text_disabled
+    };
+    let accent = if has_stats {
+        colors.accent
+    } else {
+        colors.text_disabled
+    };
 
     row![
         icon_to_text(Bootstrap::Speedometer)

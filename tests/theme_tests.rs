@@ -5,7 +5,10 @@ use pulse_stream_rs::theme::{get_colors, pulse_theme, ThemeMode};
 #[test]
 fn dark_scheme_accent_is_cyan() {
     let c = get_colors(ThemeMode::Dark);
-    assert!(c.accent.b > 0.7, "dark accent should have strong blue component");
+    assert!(
+        c.accent.b > 0.7,
+        "dark accent should have strong blue component"
+    );
     assert!(c.accent.r < 0.1, "dark accent red should be near zero");
 }
 
@@ -36,7 +39,10 @@ fn text_primary_readable_on_dark() {
     let text_lum = c.text_primary.r * 0.299 + c.text_primary.g * 0.587 + c.text_primary.b * 0.114;
     let bg_lum = c.bg_primary.r * 0.299 + c.bg_primary.g * 0.587 + c.bg_primary.b * 0.114;
     let contrast = (text_lum + 0.05) / (bg_lum + 0.05);
-    assert!(contrast > 4.5, "text should have sufficient contrast on dark bg (got {contrast})");
+    assert!(
+        contrast > 4.5,
+        "text should have sufficient contrast on dark bg (got {contrast})"
+    );
 }
 
 #[test]
@@ -45,7 +51,10 @@ fn text_primary_readable_on_light() {
     let text_lum = c.text_primary.r * 0.299 + c.text_primary.g * 0.587 + c.text_primary.b * 0.114;
     let bg_lum = c.bg_primary.r * 0.299 + c.bg_primary.g * 0.587 + c.bg_primary.b * 0.114;
     let contrast = (bg_lum + 0.05) / (text_lum + 0.05);
-    assert!(contrast > 4.5, "text should have sufficient contrast on light bg (got {contrast})");
+    assert!(
+        contrast > 4.5,
+        "text should have sufficient contrast on light bg (got {contrast})"
+    );
 }
 
 // ==================== Color value sanity ====================
@@ -53,9 +62,18 @@ fn text_primary_readable_on_light() {
 #[test]
 fn status_colors_are_distinct() {
     let c = get_colors(ThemeMode::Dark);
-    assert!(c.green.g > c.green.r && c.green.g > c.green.b, "green should be greenish");
-    assert!(c.red.r > c.red.g && c.red.r > c.red.b, "red should be reddish");
-    assert!(c.yellow.r > 0.5 && c.yellow.g > 0.3, "yellow should be warm");
+    assert!(
+        c.green.g > c.green.r && c.green.g > c.green.b,
+        "green should be greenish"
+    );
+    assert!(
+        c.red.r > c.red.g && c.red.r > c.red.b,
+        "red should be reddish"
+    );
+    assert!(
+        c.yellow.r > 0.5 && c.yellow.g > 0.3,
+        "yellow should be warm"
+    );
 }
 
 #[test]
@@ -77,8 +95,14 @@ fn text_hierarchy_dark() {
     let primary_lum = c.text_primary.r + c.text_primary.g + c.text_primary.b;
     let secondary_lum = c.text_secondary.r + c.text_secondary.g + c.text_secondary.b;
     let disabled_lum = c.text_disabled.r + c.text_disabled.g + c.text_disabled.b;
-    assert!(primary_lum > secondary_lum, "primary text brighter than secondary");
-    assert!(secondary_lum > disabled_lum, "secondary text brighter than disabled");
+    assert!(
+        primary_lum > secondary_lum,
+        "primary text brighter than secondary"
+    );
+    assert!(
+        secondary_lum > disabled_lum,
+        "secondary text brighter than disabled"
+    );
 }
 
 #[test]
@@ -87,8 +111,14 @@ fn text_hierarchy_light() {
     let primary_lum = c.text_primary.r + c.text_primary.g + c.text_primary.b;
     let secondary_lum = c.text_secondary.r + c.text_secondary.g + c.text_secondary.b;
     let disabled_lum = c.text_disabled.r + c.text_disabled.g + c.text_disabled.b;
-    assert!(primary_lum < secondary_lum, "primary text darker than secondary");
-    assert!(secondary_lum < disabled_lum, "secondary text darker than disabled");
+    assert!(
+        primary_lum < secondary_lum,
+        "primary text darker than secondary"
+    );
+    assert!(
+        secondary_lum < disabled_lum,
+        "secondary text darker than disabled"
+    );
 }
 
 // ==================== get_colors caching ====================

@@ -22,11 +22,21 @@ pub struct AppSettings {
     pub dark_theme: bool,
 }
 
-fn default_server() -> String { String::new() }
-fn default_port() -> u16 { 4714 }
-fn default_rate() -> u32 { 48000 }
-fn default_channels() -> u16 { 2 }
-fn default_true() -> bool { true }
+fn default_server() -> String {
+    String::new()
+}
+fn default_port() -> u16 {
+    4714
+}
+fn default_rate() -> u32 {
+    48000
+}
+fn default_channels() -> u16 {
+    2
+}
+fn default_true() -> bool {
+    true
+}
 
 impl Default for AppSettings {
     fn default() -> Self {

@@ -43,30 +43,30 @@ impl ColorScheme {
     pub fn dark() -> Self {
         Self {
             // Cyan/teal accent — evokes audio waves & streaming
-            accent: Color::from_rgb(0.0, 0.74, 0.85),       // #00BCD9
+            accent: Color::from_rgb(0.0, 0.74, 0.85), // #00BCD9
             accent_hover: Color::from_rgb(0.15, 0.82, 0.92), // #27D1EB
-            accent_dim: Color::from_rgb(0.0, 0.55, 0.64),    // #008CA3
+            accent_dim: Color::from_rgb(0.0, 0.55, 0.64), // #008CA3
 
             // Cool-toned dark backgrounds
-            bg_primary: Color::from_rgb(0.05, 0.065, 0.09),    // #0D1117
+            bg_primary: Color::from_rgb(0.05, 0.065, 0.09), // #0D1117
             bg_secondary: Color::from_rgb(0.086, 0.106, 0.133), // #161B22
-            bg_tertiary: Color::from_rgb(0.13, 0.15, 0.176),    // #21262D
-            bg_hover: Color::from_rgb(0.16, 0.18, 0.21),        // #292E36
+            bg_tertiary: Color::from_rgb(0.13, 0.15, 0.176), // #21262D
+            bg_hover: Color::from_rgb(0.16, 0.18, 0.21),    // #292E36
 
-            surface: Color::from_rgb(0.07, 0.086, 0.11),       // #12161C
+            surface: Color::from_rgb(0.07, 0.086, 0.11), // #12161C
             surface_hover: Color::from_rgb(0.10, 0.12, 0.15),
             surface_active: Color::from_rgb(0.14, 0.16, 0.19),
             surface_elevated: Color::from_rgb(0.086, 0.106, 0.133),
 
-            text_primary: Color::from_rgb(0.90, 0.93, 0.95),   // #E6EDFA
-            text_secondary: Color::from_rgb(0.55, 0.58, 0.62),  // #8B949E
-            text_disabled: Color::from_rgb(0.30, 0.33, 0.37),   // #4D5460
+            text_primary: Color::from_rgb(0.90, 0.93, 0.95), // #E6EDFA
+            text_secondary: Color::from_rgb(0.55, 0.58, 0.62), // #8B949E
+            text_disabled: Color::from_rgb(0.30, 0.33, 0.37), // #4D5460
 
-            green: Color::from_rgb(0.25, 0.72, 0.31),  // #3FB84F
+            green: Color::from_rgb(0.25, 0.72, 0.31), // #3FB84F
             yellow: Color::from_rgb(0.90, 0.70, 0.15), // #E6B326
-            red: Color::from_rgb(0.97, 0.32, 0.29),    // #F85149
+            red: Color::from_rgb(0.97, 0.32, 0.29),   // #F85149
 
-            border: Color::from_rgb(0.19, 0.21, 0.24),  // #30363D
+            border: Color::from_rgb(0.19, 0.21, 0.24), // #30363D
             border_light: Color::from_rgb(0.13, 0.15, 0.18),
             border_focus: Color::from_rgb(0.0, 0.74, 0.85),
 
@@ -76,29 +76,29 @@ impl ColorScheme {
 
     pub fn light() -> Self {
         Self {
-            accent: Color::from_rgb(0.0, 0.59, 0.65),        // #0097A7
-            accent_hover: Color::from_rgb(0.0, 0.67, 0.76),   // #00ABC1
-            accent_dim: Color::from_rgb(0.0, 0.47, 0.53),     // #007887
+            accent: Color::from_rgb(0.0, 0.59, 0.65),       // #0097A7
+            accent_hover: Color::from_rgb(0.0, 0.67, 0.76), // #00ABC1
+            accent_dim: Color::from_rgb(0.0, 0.47, 0.53),   // #007887
 
-            bg_primary: Color::from_rgb(0.96, 0.97, 0.98),    // #F6F8FA
-            bg_secondary: Color::from_rgb(0.93, 0.95, 0.96),   // #EEF1F5
-            bg_tertiary: Color::from_rgb(0.88, 0.91, 0.93),    // #E1E7ED
-            bg_hover: Color::from_rgb(0.85, 0.87, 0.89),       // #D8DEE4
+            bg_primary: Color::from_rgb(0.96, 0.97, 0.98), // #F6F8FA
+            bg_secondary: Color::from_rgb(0.93, 0.95, 0.96), // #EEF1F5
+            bg_tertiary: Color::from_rgb(0.88, 0.91, 0.93), // #E1E7ED
+            bg_hover: Color::from_rgb(0.85, 0.87, 0.89),   // #D8DEE4
 
             surface: Color::WHITE,
             surface_hover: Color::from_rgb(0.96, 0.97, 0.98),
             surface_active: Color::from_rgb(0.93, 0.95, 0.96),
             surface_elevated: Color::WHITE,
 
-            text_primary: Color::from_rgb(0.12, 0.14, 0.16),   // #1F2328
-            text_secondary: Color::from_rgb(0.34, 0.38, 0.42),  // #57606A
-            text_disabled: Color::from_rgb(0.55, 0.58, 0.62),   // #8C959F
+            text_primary: Color::from_rgb(0.12, 0.14, 0.16), // #1F2328
+            text_secondary: Color::from_rgb(0.34, 0.38, 0.42), // #57606A
+            text_disabled: Color::from_rgb(0.55, 0.58, 0.62), // #8C959F
 
-            green: Color::from_rgb(0.10, 0.50, 0.22),  // #1A7F37
-            yellow: Color::from_rgb(0.60, 0.40, 0.0),  // #9A6700
-            red: Color::from_rgb(0.81, 0.13, 0.18),    // #CF222E
+            green: Color::from_rgb(0.10, 0.50, 0.22), // #1A7F37
+            yellow: Color::from_rgb(0.60, 0.40, 0.0), // #9A6700
+            red: Color::from_rgb(0.81, 0.13, 0.18),   // #CF222E
 
-            border: Color::from_rgb(0.82, 0.84, 0.87),  // #D0D7DE
+            border: Color::from_rgb(0.82, 0.84, 0.87), // #D0D7DE
             border_light: Color::from_rgb(0.85, 0.87, 0.89),
             border_focus: Color::from_rgb(0.0, 0.59, 0.65),
 
@@ -108,7 +108,8 @@ impl ColorScheme {
 }
 
 static DARK_SCHEME: std::sync::LazyLock<ColorScheme> = std::sync::LazyLock::new(ColorScheme::dark);
-static LIGHT_SCHEME: std::sync::LazyLock<ColorScheme> = std::sync::LazyLock::new(ColorScheme::light);
+static LIGHT_SCHEME: std::sync::LazyLock<ColorScheme> =
+    std::sync::LazyLock::new(ColorScheme::light);
 
 pub fn get_colors(mode: ThemeMode) -> ColorScheme {
     match mode {
@@ -361,7 +362,11 @@ impl iced::widget::text_input::StyleSheet for InputStyle {
         iced::widget::text_input::Appearance {
             background: iced::Background::Color(colors.bg_secondary),
             border: iced::Border {
-                color: if self.error { colors.red } else { colors.border },
+                color: if self.error {
+                    colors.red
+                } else {
+                    colors.border
+                },
                 width: if self.error { 1.5 } else { 1.0 },
                 radius: 8.0.into(),
             },
@@ -374,11 +379,19 @@ impl iced::widget::text_input::StyleSheet for InputStyle {
         iced::widget::text_input::Appearance {
             background: iced::Background::Color(colors.bg_secondary),
             border: iced::Border {
-                color: if self.error { colors.red } else { colors.border_focus },
+                color: if self.error {
+                    colors.red
+                } else {
+                    colors.border_focus
+                },
                 width: 2.0,
                 radius: 8.0.into(),
             },
-            icon_color: if self.error { colors.red } else { colors.accent },
+            icon_color: if self.error {
+                colors.red
+            } else {
+                colors.accent
+            },
         }
     }
 
@@ -500,7 +513,10 @@ pub struct PickListStyle {
 impl iced::widget::pick_list::StyleSheet for PickListStyle {
     type Style = iced::Theme;
 
-    fn active(&self, _style: &<Self as iced::widget::pick_list::StyleSheet>::Style) -> iced::widget::pick_list::Appearance {
+    fn active(
+        &self,
+        _style: &<Self as iced::widget::pick_list::StyleSheet>::Style,
+    ) -> iced::widget::pick_list::Appearance {
         let colors = get_colors(self.mode);
         iced::widget::pick_list::Appearance {
             text_color: colors.text_primary,
@@ -515,7 +531,10 @@ impl iced::widget::pick_list::StyleSheet for PickListStyle {
         }
     }
 
-    fn hovered(&self, _style: &<Self as iced::widget::pick_list::StyleSheet>::Style) -> iced::widget::pick_list::Appearance {
+    fn hovered(
+        &self,
+        _style: &<Self as iced::widget::pick_list::StyleSheet>::Style,
+    ) -> iced::widget::pick_list::Appearance {
         let colors = get_colors(self.mode);
         iced::widget::pick_list::Appearance {
             text_color: colors.text_primary,

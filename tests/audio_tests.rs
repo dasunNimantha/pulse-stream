@@ -152,14 +152,7 @@ fn streamer_start_sets_running() {
     let mut streamer = AudioStreamer::new();
     let _rx = streamer.event_receiver();
 
-    streamer.start(
-        "127.0.0.1".to_string(),
-        4714,
-        48000,
-        2,
-        None,
-        None,
-    );
+    streamer.start("127.0.0.1".to_string(), 4714, 48000, 2, None, None);
     assert!(streamer.is_running());
 
     streamer.stop();

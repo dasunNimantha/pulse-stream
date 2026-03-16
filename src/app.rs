@@ -128,15 +128,24 @@ impl Application for PulseStreamApp {
                 let rate: u32 = self.state.rate.parse().unwrap_or(48000);
                 let channels: u16 = self.state.channels.parse().unwrap_or(2);
                 let device_id = self.state.selected_device.as_ref().and_then(|d| {
-                    if d.id.is_empty() { None } else { Some(d.id.clone()) }
+                    if d.id.is_empty() {
+                        None
+                    } else {
+                        Some(d.id.clone())
+                    }
                 });
 
                 let process_id = self.state.selected_process.as_ref().and_then(|name| {
-                    self.state.processes.iter().find(|p| &p.name == name).map(|p| p.pid)
+                    self.state
+                        .processes
+                        .iter()
+                        .find(|p| &p.name == name)
+                        .map(|p| p.pid)
                 });
 
                 self.save_settings();
-                self.streamer.start(server, port, rate, channels, device_id, process_id);
+                self.streamer
+                    .start(server, port, rate, channels, device_id, process_id);
             }
 
             Message::Disconnect => {
@@ -149,12 +158,8 @@ impl Application for PulseStreamApp {
             Message::ChannelsChanged(s) => self.state.channels = s,
 
             Message::DeviceSelected(name) => {
-                self.state.selected_device = self
-                    .state
-                    .devices
-                    .iter()
-                    .find(|d| d.name == name)
-                    .cloned();
+                self.state.selected_device =
+                    self.state.devices.iter().find(|d| d.name == name).cloned();
             }
 
             Message::ProcessSelected(name) => {
@@ -221,8 +226,12 @@ impl Application for PulseStreamApp {
                     self.state.stats_bitrate = format!("{}  {:.1}ms", br, stats.client_latency_ms);
                     self.state.stats_format = stats.capture_format;
                     let secs = stats.uptime.as_secs();
-                    self.state.stats_uptime =
-                        format!("{:02}:{:02}:{:02}", secs / 3600, (secs % 3600) / 60, secs % 60);
+                    self.state.stats_uptime = format!(
+                        "{:02}:{:02}:{:02}",
+                        secs / 3600,
+                        (secs % 3600) / 60,
+                        secs % 60
+                    );
                     self.state.show_quality_warning = stats.drops > 0;
                 }
                 AudioEvent::VolumeChanged { volume, muted } => {
@@ -352,7 +361,11 @@ impl PulseStreamApp {
             rate: self.state.rate.parse().unwrap_or(48000),
             channels: self.state.channels.parse().unwrap_or(2),
             device_id: self.state.selected_device.as_ref().and_then(|d| {
-                if d.id.is_empty() { None } else { Some(d.id.clone()) }
+                if d.id.is_empty() {
+                    None
+                } else {
+                    Some(d.id.clone())
+                }
             }),
             auto_connect: self.state.auto_connect,
             minimize_to_tray: self.state.minimize_to_tray,
@@ -448,11 +461,27 @@ fn toggle_startup_registry(enable: bool) {
     // Use reg.exe for simplicity
     if enable {
         let _ = std::process::Command::new("reg")
-            .args(["add", &format!(r"HKCU\{}", key_path), "/v", value_name, "/t", "REG_SZ", "/d", &format!("\"{}\"", exe_str), "/f"])
+            .args([
+                "add",
+                &format!(r"HKCU\{}", key_path),
+                "/v",
+                value_name,
+                "/t",
+                "REG_SZ",
+                "/d",
+                &format!("\"{}\"", exe_str),
+                "/f",
+            ])
             .output();
     } else {
         let _ = std::process::Command::new("reg")
-            .args(["delete", &format!(r"HKCU\{}", key_path), "/v", value_name, "/f"])
+            .args([
+                "delete",
+                &format!(r"HKCU\{}", key_path),
+                "/v",
+                value_name,
+                "/f",
+            ])
             .output();
     }
 }
