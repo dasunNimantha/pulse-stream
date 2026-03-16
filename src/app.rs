@@ -300,18 +300,18 @@ impl Application for PulseStreamApp {
         let exit_id = self.tray_exit_id.clone();
         let tray_events = iced::subscription::unfold("tray-events", exit_id, |exit_id| async {
             loop {
-                if let Ok(event) = tray_icon::TrayIconEvent::receiver().try_recv() {
-                    match event {
-                        tray_icon::TrayIconEvent::Click {
-                            button: tray_icon::MouseButton::Left,
-                            ..
-                        }
-                        | tray_icon::TrayIconEvent::DoubleClick {
-                            button: tray_icon::MouseButton::Left,
-                            ..
-                        } => return (Message::TrayRestore, exit_id),
-                        _ => {}
+                if let Ok(
+                    tray_icon::TrayIconEvent::Click {
+                        button: tray_icon::MouseButton::Left,
+                        ..
                     }
+                    | tray_icon::TrayIconEvent::DoubleClick {
+                        button: tray_icon::MouseButton::Left,
+                        ..
+                    },
+                ) = tray_icon::TrayIconEvent::receiver().try_recv()
+                {
+                    return (Message::TrayRestore, exit_id);
                 }
                 if let Ok(event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
                     if exit_id.as_ref() == Some(&event.id) {

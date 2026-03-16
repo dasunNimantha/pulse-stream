@@ -116,6 +116,12 @@ impl AudioStreamer {
     }
 }
 
+impl Default for AudioStreamer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Drop for AudioStreamer {
     fn drop(&mut self) {
         self.stop();

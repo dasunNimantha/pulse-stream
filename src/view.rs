@@ -24,15 +24,15 @@ pub fn is_valid_server(s: &str) -> bool {
 }
 
 pub fn is_valid_port(s: &str) -> bool {
-    s.parse::<u16>().map_or(false, |p| p > 0)
+    s.parse::<u16>().is_ok_and(|p| p > 0)
 }
 
 pub fn is_valid_rate(s: &str) -> bool {
-    s.parse::<u32>().map_or(false, |r| (1000..=384000).contains(&r))
+    s.parse::<u32>().is_ok_and(|r| (1000..=384000).contains(&r))
 }
 
 pub fn is_valid_channels(s: &str) -> bool {
-    s.parse::<u16>().map_or(false, |c| (1..=8).contains(&c))
+    s.parse::<u16>().is_ok_and(|c| (1..=8).contains(&c))
 }
 
 pub fn all_fields_valid(state: &AppState) -> bool {
