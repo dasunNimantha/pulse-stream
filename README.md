@@ -81,20 +81,6 @@ Settings are stored at:
 | `minimize_to_tray`| `true`  | Minimize to system tray on close   |
 | `dark_theme`      | `true`  | Dark mode enabled                  |
 
-## Architecture
-
-```
-src/
-├── main.rs        # Entry point and window configuration
-├── lib.rs         # Module exports
-├── app.rs         # Application state, update loop, subscriptions
-├── audio.rs       # WASAPI capture, TCP streaming, device enumeration
-├── view.rs        # UI layout and input validation
-├── theme.rs       # Color schemes and widget styles
-├── message.rs     # Iced message types
-└── settings.rs    # Persistent settings (serde JSON)
-```
-
 **Key design decisions:**
 
 - Audio capture runs on a dedicated thread communicating via `flume` channels to keep the UI responsive
@@ -152,20 +138,6 @@ Use a wired Ethernet connection instead of WiFi for the most consistent latency.
 - **No sample rate conversion** — the sender captures at the device's native rate and sends as-is. The `rate` and `channels` fields configure the PulseAudio module expectation but do not resample
 - **Per-app capture requires Windows 10 2004+** — process loopback (`AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK`) is only available on Windows 10 version 2004 and later
 - **System tray requires a window manager** — the tray icon uses OS-level system tray APIs; headless or terminal-only Windows environments are not supported
-
-## CI / CD
-
-| Workflow | Trigger | What it does |
-| -------- | ------- | ------------ |
-| **CI** | Push / PR to `master` | Format check, clippy, tests, release build |
-| **Release** | Tag `v*` | Tests, release build, creates GitHub Release with `.exe` |
-
-To publish a release:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
 
 ## License
 
