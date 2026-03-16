@@ -13,7 +13,8 @@ Stream Windows audio to a Linux machine over TCP using ALSA. Built with Rust and
 - **Auto server discovery** — scans the local subnet to find receivers
 - **Real-time stats** — displays bandwidth, latency, capture format, and uptime
 - **System volume integration** — reads Windows volume/mute state and applies it to the stream
-- **System tray** — minimize to tray with restore and exit from the context menu
+- **Start with Windows** — launches at boot minimized to tray, enabled by default
+- **System tray** — starts hidden in tray; restore with a click, exit from the context menu
 - **Dark / Light theme** — cyan-accented theme with a toggle in the header
 - **Persistent settings** — server, port, audio format, and preferences saved to `settings.json`
 - **Auto-reconnect** — retries the connection automatically on network failure
@@ -159,7 +160,8 @@ Settings are stored at:
 | `channels`        | `2`     | Channel count (1–8)                |
 | `device_id`       | `null`  | Audio output device (null = default) |
 | `auto_connect`    | `false` | Connect on startup                 |
-| `minimize_to_tray`| `true`  | Minimize to system tray on close   |
+| `start_with_windows` | `true` | Register in Windows startup       |
+| `minimize_to_tray`| `true`  | Start hidden in tray; minimize on close |
 | `dark_theme`      | `true`  | Dark mode enabled                  |
 
 **Key design decisions:**

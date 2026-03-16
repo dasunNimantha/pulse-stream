@@ -72,7 +72,7 @@ impl Application for PulseStreamApp {
             channels: settings.channels.to_string(),
             stream_state: StreamState::Disconnected,
             auto_connect: settings.auto_connect,
-            start_with_windows: false,
+            start_with_windows: settings.start_with_windows,
             minimize_to_tray: settings.minimize_to_tray,
             volume_text: String::new(),
             show_quality_warning: false,
@@ -99,13 +99,24 @@ impl Application for PulseStreamApp {
             tray_exit_id,
         };
 
-        let startup_cmd = if app.state.server.trim().is_empty() {
-            Command::perform(async {}, |_| Message::ScanServers)
-        } else {
-            Command::none()
-        };
+        #[cfg(windows)]
+        if app.state.start_with_windows {
+            toggle_startup_registry(true);
+        }
 
-        (app, startup_cmd)
+        let mut cmds = Vec::new();
+
+        if app.state.minimize_to_tray {
+            cmds.push(window::change_mode(window::Id::MAIN, window::Mode::Hidden));
+        }
+
+        if app.state.server.trim().is_empty() {
+            cmds.push(Command::perform(async {}, |_| Message::ScanServers));
+        } else if app.state.auto_connect {
+            cmds.push(Command::perform(async {}, |_| Message::Connect));
+        }
+
+        (app, Command::batch(cmds))
     }
 
     fn title(&self) -> String {
@@ -186,6 +197,7 @@ impl Application for PulseStreamApp {
                 self.state.start_with_windows = v;
                 #[cfg(windows)]
                 toggle_startup_registry(v);
+                self.save_settings();
             }
             Message::ToggleMinimizeToTray(v) => {
                 self.state.minimize_to_tray = v;
@@ -368,6 +380,7 @@ impl PulseStreamApp {
                 }
             }),
             auto_connect: self.state.auto_connect,
+            start_with_windows: self.state.start_with_windows,
             minimize_to_tray: self.state.minimize_to_tray,
             dark_theme: self.theme_mode == ThemeMode::Dark,
         };

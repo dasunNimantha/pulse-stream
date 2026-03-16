@@ -9,6 +9,7 @@ fn default_settings_values() {
     assert_eq!(s.channels, 2);
     assert!(s.device_id.is_none());
     assert!(!s.auto_connect);
+    assert!(s.start_with_windows);
     assert!(s.minimize_to_tray);
     assert!(s.dark_theme);
 }
@@ -22,6 +23,7 @@ fn settings_serialization_roundtrip() {
         channels: 6,
         device_id: Some("device-123".to_string()),
         auto_connect: true,
+        start_with_windows: true,
         minimize_to_tray: false,
         dark_theme: false,
     };
@@ -35,6 +37,7 @@ fn settings_serialization_roundtrip() {
     assert_eq!(restored.channels, 6);
     assert_eq!(restored.device_id, Some("device-123".to_string()));
     assert!(restored.auto_connect);
+    assert!(restored.start_with_windows);
     assert!(!restored.minimize_to_tray);
     assert!(!restored.dark_theme);
 }
@@ -50,6 +53,7 @@ fn settings_deserialization_with_missing_fields() {
     assert_eq!(s.channels, 2);
     assert!(s.device_id.is_none());
     assert!(!s.auto_connect);
+    assert!(s.start_with_windows);
     assert!(s.minimize_to_tray);
     assert!(s.dark_theme);
 }
@@ -64,6 +68,7 @@ fn settings_deserialization_empty_json() {
     assert_eq!(s.port, d.port);
     assert_eq!(s.rate, d.rate);
     assert_eq!(s.channels, d.channels);
+    assert_eq!(s.start_with_windows, d.start_with_windows);
     assert_eq!(s.minimize_to_tray, d.minimize_to_tray);
     assert_eq!(s.dark_theme, d.dark_theme);
 }
@@ -94,6 +99,20 @@ fn settings_preserve_minimize_to_tray_false() {
     let json = r#"{"minimize_to_tray": false}"#;
     let s: AppSettings = serde_json::from_str(json).unwrap();
     assert!(!s.minimize_to_tray);
+}
+
+#[test]
+fn settings_preserve_start_with_windows_true() {
+    let json = r#"{"start_with_windows": true}"#;
+    let s: AppSettings = serde_json::from_str(json).unwrap();
+    assert!(s.start_with_windows);
+}
+
+#[test]
+fn settings_start_with_windows_defaults_true() {
+    let json = "{}";
+    let s: AppSettings = serde_json::from_str(json).unwrap();
+    assert!(s.start_with_windows);
 }
 
 #[test]
