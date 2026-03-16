@@ -1,0 +1,743 @@
+use std::io::Write;
+use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+#[cfg(windows)]
+use windows::Win32::Media::Audio::*;
+#[cfg(windows)]
+use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+#[cfg(windows)]
+use windows::Win32::System::Com::*;
+#[cfg(windows)]
+use windows::Win32::System::Threading::*;
+#[cfg(windows)]
+use windows::Win32::Foundation::*;
+#[cfg(windows)]
+use windows::core::Interface;
+#[cfg(windows)]
+use std::sync::{Condvar, Mutex};
+
+#[derive(Debug, Clone)]
+pub enum StreamState {
+    Disconnected,
+    Connecting,
+    Connected,
+    Streaming,
+}
+
+#[derive(Debug, Clone)]
+pub struct Stats {
+    pub bytes_sent: u64,
+    pub bitrate_kbps: f64,
+    pub uptime: Duration,
+    pub client_latency_ms: f64,
+    pub drops: u32,
+    pub capture_format: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeviceInfo {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum AudioEvent {
+    StateChanged(StreamState),
+    Log(String),
+    LevelUpdated { left: f32, right: f32 },
+    StatsUpdated(Stats),
+    VolumeChanged { volume: f32, muted: bool },
+}
+
+pub struct AudioStreamer {
+    event_tx: flume::Sender<AudioEvent>,
+    event_rx: flume::Receiver<AudioEvent>,
+    running: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl AudioStreamer {
+    pub fn new() -> Self {
+        let (tx, rx) = flume::unbounded();
+        Self {
+            event_tx: tx,
+            event_rx: rx,
+            running: Arc::new(AtomicBool::new(false)),
+            thread: None,
+        }
+    }
+
+    pub fn event_receiver(&self) -> flume::Receiver<AudioEvent> {
+        self.event_rx.clone()
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::Relaxed)
+    }
+
+    pub fn start(
+        &mut self,
+        server: String,
+        port: u16,
+        rate: u32,
+        channels: u16,
+        _device_id: Option<String>,
+        process_id: Option<u32>,
+    ) {
+        if self.running.load(Ordering::Relaxed) {
+            return;
+        }
+        self.running.store(true, Ordering::Relaxed);
+
+        let tx = self.event_tx.clone();
+        let running = self.running.clone();
+
+        self.thread = Some(std::thread::Builder::new()
+            .name("pulse-stream-audio".to_string())
+            .spawn(move || {
+                run_loop(&tx, &running, &server, port, rate, channels, process_id);
+            })
+            .expect("failed to spawn audio thread"));
+    }
+
+    pub fn stop(&mut self) {
+        self.running.store(false, Ordering::Relaxed);
+        if let Some(handle) = self.thread.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for AudioStreamer {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+#[cfg(windows)]
+pub fn get_output_devices() -> Vec<DeviceInfo> {
+    let mut devices = vec![DeviceInfo {
+        id: String::new(),
+        name: "Default".to_string(),
+    }];
+
+    unsafe {
+        // winit hasn't initialized COM yet when Application::new runs.
+        // Initialize as STA (compatible with winit's later OleInitialize).
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+        let co_result = CoCreateInstance::<_, IMMDeviceEnumerator>(
+            &MMDeviceEnumerator,
+            None,
+            CLSCTX_ALL,
+        );
+
+        let Ok(enumerator) = co_result else {
+            return devices;
+        };
+
+        let Ok(collection) = enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) else {
+            return devices;
+        };
+
+        let Ok(count) = collection.GetCount() else {
+            return devices;
+        };
+
+        for i in 0..count {
+            if let Ok(device) = collection.Item(i) {
+                let id_str = device
+                    .GetId()
+                    .ok()
+                    .map(|id| {
+                        let s = id.to_string().unwrap_or_default();
+                        CoTaskMemFree(Some(id.0 as *const _));
+                        s
+                    })
+                    .unwrap_or_default();
+
+                let name = get_device_name(&device)
+                    .unwrap_or_else(|| format!("Audio Device {}", i + 1));
+
+                devices.push(DeviceInfo { id: id_str, name });
+            }
+        }
+    }
+
+    devices
+}
+
+#[cfg(not(windows))]
+pub fn get_output_devices() -> Vec<DeviceInfo> {
+    vec![DeviceInfo {
+        id: String::new(),
+        name: "Default".to_string(),
+    }]
+}
+
+#[cfg(windows)]
+unsafe fn get_device_name(device: &IMMDevice) -> Option<String> {
+    use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
+
+    let store: IPropertyStore = device.OpenPropertyStore(STGM(0)).ok()?;
+
+    let key = windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY {
+        fmtid: windows::core::GUID::from_values(
+            0xa45c254e,
+            0xdf1c,
+            0x4efd,
+            [0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0],
+        ),
+        pid: 14,
+    };
+
+    let value = store.GetValue(&key).ok()?;
+
+    // In windows crate 0.58, PROPVARIANT exposes a Debug representation
+    // that includes the string value. Parse it or use to_string if available.
+    // As a reliable fallback, serialize via Debug format.
+    let dbg = format!("{:?}", value);
+    // Debug output looks like: PROPVARIANT { ... "DeviceName" ... }
+    // Try extracting a quoted string from debug output
+    if let Some(start) = dbg.find('"') {
+        if let Some(end) = dbg[start + 1..].find('"') {
+            return Some(dbg[start + 1..start + 1 + end].to_string());
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+pub fn get_audio_processes() -> Vec<ProcessInfo> {
+    let mut result = Vec::new();
+
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+        let Ok(enumerator) = CoCreateInstance::<_, IMMDeviceEnumerator>(
+            &MMDeviceEnumerator,
+            None,
+            CLSCTX_ALL,
+        ) else {
+            return result;
+        };
+
+        let Ok(device) = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) else {
+            return result;
+        };
+
+        let Ok(session_mgr): Result<IAudioSessionManager2, _> =
+            device.Activate(CLSCTX_ALL, None)
+        else {
+            return result;
+        };
+
+        let Ok(session_enum) = session_mgr.GetSessionEnumerator() else {
+            return result;
+        };
+
+        let Ok(count) = session_enum.GetCount() else {
+            return result;
+        };
+
+        let mut seen = std::collections::HashSet::new();
+
+        for i in 0..count {
+            let Ok(session) = session_enum.GetSession(i) else {
+                continue;
+            };
+            let Ok(session2): Result<IAudioSessionControl2, _> = session.cast() else {
+                continue;
+            };
+            let Ok(pid) = session2.GetProcessId() else {
+                continue;
+            };
+            if pid == 0 || !seen.insert(pid) {
+                continue;
+            }
+
+            let name = get_process_name(pid).unwrap_or_else(|| format!("PID {}", pid));
+            result.push(ProcessInfo { pid, name });
+        }
+    }
+
+    result
+}
+
+#[cfg(not(windows))]
+pub fn get_audio_processes() -> Vec<ProcessInfo> {
+    Vec::new()
+}
+
+#[cfg(windows)]
+fn get_process_name(pid: u32) -> Option<String> {
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows::Win32::Foundation::CloseHandle;
+
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 260];
+        let mut size = buf.len() as u32;
+
+        let ok = windows::Win32::System::Threading::QueryFullProcessImageNameW(
+            handle,
+            windows::Win32::System::Threading::PROCESS_NAME_FORMAT(0),
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut size,
+        );
+
+        let _ = CloseHandle(handle);
+
+        if ok.is_ok() {
+            let path = String::from_utf16_lossy(&buf[..size as usize]);
+            let filename = std::path::Path::new(&path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or(path);
+            Some(filename)
+        } else {
+            None
+        }
+    }
+}
+
+fn run_loop(
+    tx: &flume::Sender<AudioEvent>,
+    running: &Arc<AtomicBool>,
+    server: &str,
+    port: u16,
+    rate: u32,
+    channels: u16,
+    process_id: Option<u32>,
+) {
+    while running.load(Ordering::Relaxed) {
+        let _ = tx.send(AudioEvent::StateChanged(StreamState::Connecting));
+        let _ = tx.send(AudioEvent::Log(format!("Connecting to {}:{}...", server, port)));
+
+        match do_stream(tx, running, server, port, rate, channels, process_id) {
+            Ok(()) => {}
+            Err(e) => {
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
+                let _ = tx.send(AudioEvent::Log(format!("Error: {}", e)));
+                let _ = tx.send(AudioEvent::StateChanged(StreamState::Disconnected));
+                let _ = tx.send(AudioEvent::LevelUpdated { left: 0.0, right: 0.0 });
+                let _ = tx.send(AudioEvent::Log("Reconnecting in 3s...".to_string()));
+
+                for _ in 0..30 {
+                    if !running.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
+    }
+
+    let _ = tx.send(AudioEvent::StateChanged(StreamState::Disconnected));
+    let _ = tx.send(AudioEvent::LevelUpdated { left: 0.0, right: 0.0 });
+}
+
+#[cfg(windows)]
+#[windows::core::implement(IActivateAudioInterfaceCompletionHandler)]
+struct ActivationHandler {
+    event: Arc<(Mutex<bool>, Condvar)>,
+}
+
+#[cfg(windows)]
+impl IActivateAudioInterfaceCompletionHandler_Impl for ActivationHandler_Impl {
+    fn ActivateCompleted(
+        &self,
+        _op: Option<&IActivateAudioInterfaceAsyncOperation>,
+    ) -> windows::core::Result<()> {
+        let (lock, cvar) = &*self.event;
+        *lock.lock().unwrap() = true;
+        cvar.notify_one();
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+unsafe fn activate_process_loopback(pid: u32) -> Result<IAudioClient, Box<dyn std::error::Error>> {
+    let params = AUDIOCLIENT_ACTIVATION_PARAMS {
+        ActivationType: AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
+        Anonymous: AUDIOCLIENT_ACTIVATION_PARAMS_0 {
+            ProcessLoopbackParams: AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
+                TargetProcessId: pid,
+                ProcessLoopbackMode: PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE,
+            },
+        },
+    };
+
+    // Build PROPVARIANT with VT_BLOB pointing to activation params
+    #[repr(C)]
+    struct BlobPropVariant {
+        vt: u16,
+        pad: [u16; 3],
+        cb_size: u32,
+        _align: u32,
+        p_data: *const u8,
+    }
+
+    let pv = BlobPropVariant {
+        vt: 0x0041, // VT_BLOB
+        pad: [0; 3],
+        cb_size: std::mem::size_of::<AUDIOCLIENT_ACTIVATION_PARAMS>() as u32,
+        _align: 0,
+        p_data: &params as *const AUDIOCLIENT_ACTIVATION_PARAMS as *const u8,
+    };
+
+    let riid = IAudioClient::IID;
+
+    let setup = Arc::new((Mutex::new(false), Condvar::new()));
+    let callback: IActivateAudioInterfaceCompletionHandler = ActivationHandler {
+        event: setup.clone(),
+    }
+    .into();
+
+    let operation = ActivateAudioInterfaceAsync(
+        VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
+        &riid,
+        Some(&pv as *const BlobPropVariant as *const _),
+        &callback,
+    )?;
+
+    let (lock, cvar) = &*setup;
+    let mut completed = lock.lock().unwrap();
+    while !*completed {
+        let (c, timeout) = cvar.wait_timeout(completed, Duration::from_secs(5)).unwrap();
+        completed = c;
+        if timeout.timed_out() {
+            return Err("Process loopback activation timed out".into());
+        }
+    }
+    drop(completed);
+
+    let mut hr = windows::core::HRESULT(0);
+    let mut activated: Option<windows::core::IUnknown> = None;
+    operation.GetActivateResult(&mut hr, &mut activated)?;
+    hr.ok()?;
+
+    let client: IAudioClient = activated
+        .ok_or("Activation returned null audio client")?
+        .cast()?;
+
+    Ok(client)
+}
+
+#[cfg(windows)]
+fn do_stream(
+    tx: &flume::Sender<AudioEvent>,
+    running: &Arc<AtomicBool>,
+    server: &str,
+    port: u16,
+    target_rate: u32,
+    target_channels: u16,
+    process_id: Option<u32>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut tcp = TcpStream::connect(format!("{}:{}", server, port))?;
+    tcp.set_nodelay(true)?;
+    tcp.set_write_timeout(Some(Duration::from_secs(3)))?;
+    set_send_buffer(&tcp, 4096);
+
+    let _ = tx.send(AudioEvent::StateChanged(StreamState::Connected));
+    let _ = tx.send(AudioEvent::Log(format!("Connected to {}:{}", server, port)));
+
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+
+        let enumerator: IMMDeviceEnumerator = CoCreateInstance(
+            &MMDeviceEnumerator,
+            None,
+            CLSCTX_ALL,
+        )?;
+        let device = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia)?;
+
+        // Always get volume from default device
+        let ep_vol: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None)?;
+        let mut cached_volume = ep_vol.GetMasterVolumeLevelScalar()?;
+        let mut cached_mute = { let b: BOOL = ep_vol.GetMute()?; b.as_bool() };
+        let _ = tx.send(AudioEvent::VolumeChanged { volume: cached_volume, muted: cached_mute });
+
+        // 20ms buffer in 100ns units
+        let buffer_duration: i64 = 200_000;
+
+        let event_handle = CreateEventW(
+            None,
+            BOOL::from(false),
+            BOOL::from(false),
+            windows::core::PCWSTR::null(),
+        )?;
+
+        // Branch: per-process or system-wide capture
+        let (client, src_rate_val, src_ch_val, src_bits_val, is_float, mix_format_for_block_align)
+            = if let Some(pid) = process_id {
+                let _ = tx.send(AudioEvent::Log(format!("Per-app capture: PID {}", pid)));
+                let client = activate_process_loopback(pid)?;
+
+                // Process loopback: use fixed 48kHz/2ch/f32 with AUTOCONVERTPCM
+                let mut fmt: WAVEFORMATEX = std::mem::zeroed();
+                fmt.wFormatTag = 3; // WAVE_FORMAT_IEEE_FLOAT
+                fmt.nChannels = 2;
+                fmt.nSamplesPerSec = 48000;
+                fmt.wBitsPerSample = 32;
+                fmt.nBlockAlign = 8;
+                fmt.nAvgBytesPerSec = 384000;
+                fmt.cbSize = 0;
+
+                const AUTOCONVERTPCM: u32 = 0x80000000;
+                const SRC_DEFAULT_QUALITY: u32 = 0x08000000;
+
+                client.Initialize(
+                    AUDCLNT_SHAREMODE_SHARED,
+                    AUDCLNT_STREAMFLAGS_LOOPBACK
+                        | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
+                        | AUTOCONVERTPCM
+                        | SRC_DEFAULT_QUALITY,
+                    buffer_duration,
+                    0,
+                    &fmt,
+                    None,
+                )?;
+
+                (client, 48000u32, 2u16, 32u16, true, fmt)
+            } else {
+                let client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
+                let mix_format_ptr = client.GetMixFormat()?;
+
+                let src_rate_val = (*mix_format_ptr).nSamplesPerSec;
+                let src_ch_val = (*mix_format_ptr).nChannels;
+                let src_bits_val = (*mix_format_ptr).wBitsPerSample;
+
+                client.Initialize(
+                    AUDCLNT_SHAREMODE_SHARED,
+                    AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                    buffer_duration,
+                    0,
+                    &*mix_format_ptr,
+                    None,
+                )?;
+
+                let mix_format = *mix_format_ptr;
+                CoTaskMemFree(Some(mix_format_ptr as *const _));
+
+                let fmt_tag = mix_format.wFormatTag;
+                let is_float = fmt_tag == 3 || (fmt_tag == 0xFFFE && src_bits_val == 32);
+                (client, src_rate_val, src_ch_val, src_bits_val, is_float, mix_format)
+            };
+
+        let format_str = format!(
+            "{:.1}kHz {}ch {}bit",
+            src_rate_val as f64 / 1000.0,
+            src_ch_val,
+            src_bits_val
+        );
+        let _ = tx.send(AudioEvent::Log(format!("Capture: {}", format_str)));
+
+        client.SetEventHandle(event_handle)?;
+
+        let capture: IAudioCaptureClient = client.GetService()?;
+
+        client.Start()?;
+
+        let _ = tx.send(AudioEvent::StateChanged(StreamState::Streaming));
+        let _ = tx.send(AudioEvent::Log("Streaming".to_string()));
+
+        let start = Instant::now();
+        let mut total_bytes: u64 = 0;
+        let mut prev_bytes: u64 = 0;
+        let mut prev_time = Instant::now();
+        let mut tick: u32 = 0;
+        let mut avg_latency_ms: f64 = 0.0;
+        let capture_buffer_ms: f64 = buffer_duration as f64 / 10_000.0;
+
+        let src_channels = src_ch_val as usize;
+        let src_rate = src_rate_val;
+        let _block_align = mix_format_for_block_align.nBlockAlign as usize;
+
+        while running.load(Ordering::Relaxed) {
+            let wait_result = WaitForSingleObject(event_handle, 100);
+            if wait_result == WAIT_OBJECT_0 {
+                loop {
+                    let mut buffer_ptr = std::ptr::null_mut();
+                    let mut num_frames = 0u32;
+                    let mut flags = 0u32;
+
+                    let hr = capture.GetBuffer(
+                        &mut buffer_ptr,
+                        &mut num_frames,
+                        &mut flags,
+                        None,
+                        None,
+                    );
+
+                    if hr.is_err() || num_frames == 0 {
+                        let _ = capture.ReleaseBuffer(0);
+                        break;
+                    }
+
+                    let capture_instant = Instant::now();
+
+                    let float_samples = if is_float {
+                        let floats = std::slice::from_raw_parts(
+                            buffer_ptr as *const f32,
+                            num_frames as usize * src_channels,
+                        );
+                        floats.to_vec()
+                    } else {
+                        let shorts = std::slice::from_raw_parts(
+                            buffer_ptr as *const i16,
+                            num_frames as usize * src_channels,
+                        );
+                        shorts.iter().map(|&s| s as f32 / 32768.0).collect()
+                    };
+
+                    let _ = capture.ReleaseBuffer(num_frames);
+
+                    tick += 1;
+                    if tick % 4 == 0 {
+                        let (lvl_l, lvl_r) = calc_levels(&float_samples, src_channels);
+                        let _ = tx.send(AudioEvent::LevelUpdated { left: lvl_l, right: lvl_r });
+                    }
+
+                    let out_samples = if src_rate == target_rate && src_channels as u16 == target_channels {
+                        &float_samples
+                    } else {
+                        &float_samples
+                    };
+
+                    let vol = if cached_mute { 0.0 } else { cached_volume };
+                    let mut pcm = Vec::with_capacity(out_samples.len() * 2);
+                    for &s in out_samples {
+                        let scaled = (s * vol).clamp(-1.0, 1.0);
+                        let v = (scaled * 32767.0) as i16;
+                        pcm.extend_from_slice(&v.to_le_bytes());
+                    }
+
+                    if let Err(e) = tcp.write_all(&pcm) {
+                        let _ = tx.send(AudioEvent::Log(format!("Send error: {}", e)));
+                        client.Stop()?;
+                        let _ = CloseHandle(event_handle);
+                        return Err(e.into());
+                    }
+
+                    let send_elapsed_ms = capture_instant.elapsed().as_secs_f64() * 1000.0;
+                    let chunk_latency = capture_buffer_ms + send_elapsed_ms;
+                    avg_latency_ms = avg_latency_ms * 0.8 + chunk_latency * 0.2;
+
+                    total_bytes += pcm.len() as u64;
+                }
+            }
+
+            // Stats + volume poll (runs every iteration, even during silence)
+            let now = Instant::now();
+            let elapsed_ms = now.duration_since(prev_time).as_millis() as u64;
+            if elapsed_ms >= 500 {
+                let kbps = (total_bytes - prev_bytes) as f64 * 8.0 / elapsed_ms as f64;
+                let _ = tx.send(AudioEvent::StatsUpdated(Stats {
+                    bytes_sent: total_bytes,
+                    bitrate_kbps: kbps,
+                    uptime: start.elapsed(),
+                    client_latency_ms: avg_latency_ms,
+                    drops: 0,
+                    capture_format: format_str.clone(),
+                }));
+                prev_bytes = total_bytes;
+                prev_time = now;
+
+                if let (Ok(v), Ok(m)) = (ep_vol.GetMasterVolumeLevelScalar(), ep_vol.GetMute()) {
+                    let new_mute: bool = m.as_bool();
+                    if (v - cached_volume).abs() > 0.001 || new_mute != cached_mute {
+                        cached_volume = v;
+                        cached_mute = new_mute;
+                        let _ = tx.send(AudioEvent::VolumeChanged { volume: v, muted: new_mute });
+                    }
+                }
+            }
+        }
+
+        client.Stop()?;
+        let _ = CloseHandle(event_handle);
+    }
+
+    let _ = tx.send(AudioEvent::StateChanged(StreamState::Disconnected));
+    let _ = tx.send(AudioEvent::Log("Disconnected".to_string()));
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn do_stream(
+    tx: &flume::Sender<AudioEvent>,
+    _running: &Arc<AtomicBool>,
+    _server: &str,
+    _port: u16,
+    _target_rate: u32,
+    _target_channels: u16,
+    _process_id: Option<u32>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let _ = tx.send(AudioEvent::Log("WASAPI only available on Windows".to_string()));
+    Err("unsupported platform".into())
+}
+
+#[cfg(windows)]
+fn set_send_buffer(tcp: &TcpStream, size: u32) {
+    use std::os::windows::io::AsRawSocket;
+    extern "system" {
+        fn setsockopt(s: usize, level: i32, optname: i32, optval: *const u8, optlen: i32) -> i32;
+    }
+    let raw = tcp.as_raw_socket();
+    let val = size as i32;
+    unsafe {
+        setsockopt(raw as usize, 0xFFFF, 0x1001, &val as *const i32 as *const u8, 4);
+    }
+}
+
+#[cfg(not(windows))]
+fn set_send_buffer(_tcp: &TcpStream, _size: u32) {}
+
+fn calc_levels(samples: &[f32], channels: usize) -> (f32, f32) {
+    let mut sum_l: f64 = 0.0;
+    let mut sum_r: f64 = 0.0;
+    let mut count = 0usize;
+
+    if channels >= 2 {
+        for chunk in samples.chunks(channels) {
+            sum_l += (chunk[0] as f64).powi(2);
+            sum_r += (chunk.get(1).map(|&v| v).unwrap_or(chunk[0]) as f64).powi(2);
+            count += 1;
+        }
+    } else {
+        for &s in samples {
+            sum_l += (s as f64).powi(2);
+            count += 1;
+        }
+        sum_r = sum_l;
+    }
+
+    if count == 0 {
+        return (0.0, 0.0);
+    }
+
+    let rms_l = (sum_l / count as f64).sqrt() as f32;
+    let rms_r = (sum_r / count as f64).sqrt() as f32;
+
+    fn rms_to_visual(rms: f32) -> f32 {
+        if rms < 0.0001 {
+            return 0.0;
+        }
+        let db = 20.0 * rms.log10();
+        ((db + 60.0) / 60.0).clamp(0.0, 1.0)
+    }
+
+    (rms_to_visual(rms_l), rms_to_visual(rms_r))
+}

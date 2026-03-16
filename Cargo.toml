@@ -1,0 +1,33 @@
+[package]
+name = "pulse-stream-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Stream Windows audio to PulseAudio"
+build = "build.rs"
+
+[dependencies]
+iced = { version = "0.12", features = ["tokio"] }
+iced_aw = { version = "0.9", default-features = false, features = ["icons"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+directories = "5"
+flume = "0.11"
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.58"
+windows = { version = "0.58", features = [
+    "implement",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_System_Variant",
+] }
+
+[build-dependencies]
+winresource = "0.1"
