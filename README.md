@@ -1,6 +1,6 @@
 # PulseStream
 
-Stream Windows audio to a PulseAudio server over TCP. Built with Rust and [iced](https://github.com/iced-rs/iced).
+Stream Windows audio to a Linux machine over TCP using ALSA. Built with Rust and [iced](https://github.com/iced-rs/iced).
 
 ![Windows](https://img.shields.io/badge/platform-Windows-blue)
 ![Rust](https://img.shields.io/badge/language-Rust-orange)
@@ -10,7 +10,7 @@ Stream Windows audio to a PulseAudio server over TCP. Built with Rust and [iced]
 
 - **WASAPI loopback capture** — captures system audio with low latency using Windows Audio Session API
 - **Per-app audio capture** — isolate and stream audio from a single application via process loopback
-- **Auto server discovery** — scans the local subnet to find PulseAudio TCP servers
+- **Auto server discovery** — scans the local subnet to find receivers
 - **Real-time stats** — displays bandwidth, latency, capture format, and uptime
 - **System volume integration** — reads Windows volume/mute state and applies it to the stream
 - **System tray** — minimize to tray with restore and exit from the context menu
@@ -55,17 +55,7 @@ cargo test
 
 ### Receiver setup (Linux)
 
-You have two options. **Option A** is simpler but adds ~50–100 ms of latency from PulseAudio's internal buffering. **Option B** bypasses PulseAudio entirely and plays through ALSA with minimal buffering for the lowest possible latency.
-
-#### Option A: PulseAudio module (simple, higher latency)
-
-```bash
-pactl load-module module-simple-protocol-tcp rate=48000 format=s16le channels=2 source=0 record=false port=4714
-```
-
-#### Option B: Direct ALSA receiver (low latency, recommended)
-
-This script listens on a TCP port and pipes audio straight to ALSA with a small buffer, skipping PulseAudio's buffering entirely:
+The receiver script listens on a TCP port and pipes audio straight to ALSA with a small buffer for low-latency playback:
 
 ```bash
 #!/bin/bash
@@ -163,7 +153,7 @@ Settings are stored at:
 
 | Setting           | Default | Description                        |
 | ----------------- | ------- | ---------------------------------- |
-| `server`          | *(empty — triggers auto-scan)* | PulseAudio server IP |
+| `server`          | *(empty — triggers auto-scan)* | Receiver IP |
 | `port`            | `4714`  | TCP port                           |
 | `rate`            | `48000` | Sample rate in Hz                  |
 | `channels`        | `2`     | Channel count (1–8)                |
@@ -181,13 +171,13 @@ Settings are stored at:
 
 ## Problem & Motivation
 
-Streaming audio from a Windows PC to a Linux machine running PulseAudio typically requires either running a full PulseAudio client on Windows or using third-party tools that add significant overhead. Existing solutions often suffer from:
+Streaming audio from a Windows PC to a Linux machine typically requires third-party tools that add significant overhead. Existing solutions often suffer from:
 
 - **High latency** — multiple layers of buffering between capture, encoding, network, and playback
 - **No per-app isolation** — you stream everything or nothing, with no way to pick a single application
-- **Heavy dependencies** — requiring full PulseAudio installations or virtual audio drivers on Windows
+- **Heavy dependencies** — requiring virtual audio drivers or complex audio server configurations on Windows
 
-PulseStream solves this by using WASAPI loopback capture to read audio directly from the Windows audio engine and streaming raw PCM over a simple TCP socket to PulseAudio's `module-simple-protocol-tcp`. No encoding, no virtual drivers, no PulseAudio client on Windows.
+PulseStream solves this by using WASAPI loopback capture to read audio directly from the Windows audio engine and streaming raw PCM over a simple TCP socket to an ALSA receiver on Linux. No encoding, no virtual drivers, minimal dependencies on both ends.
 
 ## Latency
 
@@ -199,37 +189,24 @@ The end-to-end audio pipeline has several stages, each contributing delay:
 | PCM conversion | < 0.1 ms | Zero-copy i16 conversion via direct memory write |
 | TCP send | 0.1–2 ms | `TCP_NODELAY` enabled, 1920-byte send buffer |
 | Network transit | 0.1–1 ms | Wired LAN recommended |
-| **Receiver buffer** | **10–100 ms** | **This is the dominant source of delay** |
+| **ALSA receiver buffer** | **~10 ms** | 256 frames × 2 periods at 48 kHz |
 
-### Why there's a noticeable delay
+### Where the delay comes from
 
-The sender side (WASAPI capture → TCP send) adds only ~12 ms total. The problem is on the **receiver**:
-
-- **`module-simple-protocol-tcp`** has an internal buffer that cannot be configured through module parameters. It buffers roughly 50–100 ms of audio before starting playback, and there is no clock synchronization. This delay is inherent to the module — both this Rust app and the C# version experience the same lag.
-- By contrast, native PulseAudio networking (e.g. `module-native-protocol-tcp` or `module-tunnel-sink` used between two Linux machines) has proper timing synchronization and shared-memory IPC, which is why Linux-to-Linux streaming has near-zero perceptible delay.
-
-### Recommended: bypass PulseAudio on the receiver
-
-Use **Option B** from the [receiver setup](#option-b-direct-alsa-receiver-low-latency-recommended) above. The direct ALSA receiver script uses a ~10 ms buffer (256 frames × 2 periods at 48 kHz), bringing the total end-to-end latency down to **~25 ms** — low enough that delay is not perceptible for most use cases.
+The sender side (WASAPI capture → TCP send) adds only ~12 ms total. The remaining delay is the **ALSA receiver buffer** — configured at ~10 ms (256 frames × 2 periods at 48 kHz), bringing the total end-to-end latency to **~25 ms**, which is low enough that delay is not perceptible for most use cases.
 
 ### Additional tips
 
 - Use a **wired Ethernet** connection — WiFi adds jitter and occasional 5–20 ms spikes
-- If using PulseAudio (Option A), lower the daemon buffer in `/etc/pulse/daemon.conf`:
-  ```
-  default-fragments = 2
-  default-fragment-size-msec = 5
-  ```
-- Restart PulseAudio after changing daemon.conf: `systemctl --user restart pulseaudio`
 
 ## Limitations
 
 - **Windows only** — WASAPI is a Windows API; the sender must run on Windows 10 or later
 - **No audio encoding** — streams raw PCM (s16le), so bandwidth usage is proportional to sample rate and channel count (~1.5 Mbps at 48 kHz stereo). Not suitable over the internet or slow networks
 - **No encryption** — audio is sent as plaintext TCP. Use only on trusted local networks
-- **Receiver must run PulseAudio or ALSA** — works with `module-simple-protocol-tcp` (higher latency) or the provided ALSA receiver script (lower latency). No native PipeWire or macOS/Windows receiver support
+- **Receiver must run ALSA** — uses the provided ALSA receiver script with `ncat` and `aplay`. No native PipeWire or macOS/Windows receiver support
 - **Single receiver** — streams to one TCP endpoint at a time; no multicast or multi-client support
-- **No sample rate conversion** — the sender captures at the device's native rate and sends as-is. The `rate` and `channels` fields configure the PulseAudio module expectation but do not resample
+- **No sample rate conversion** — the sender captures at the device's native rate and sends as-is. The `rate` and `channels` fields must match the receiver's `aplay` configuration
 - **Per-app capture requires Windows 10 2004+** — process loopback (`AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK`) is only available on Windows 10 version 2004 and later
 - **System tray requires a window manager** — the tray icon uses OS-level system tray APIs; headless or terminal-only Windows environments are not supported
 
