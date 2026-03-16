@@ -19,6 +19,13 @@ pub enum Message {
 
     AudioEvent(AudioEvent),
 
+    ScanServers,
+    ScanResult(Option<String>),
+
+    CloseRequested,
+    TrayRestore,
+    ExitApp,
+
     Tick,
     Noop,
 }

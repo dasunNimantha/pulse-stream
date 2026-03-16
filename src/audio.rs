@@ -53,7 +53,6 @@ pub struct ProcessInfo {
 pub enum AudioEvent {
     StateChanged(StreamState),
     Log(String),
-    LevelUpdated { left: f32, right: f32 },
     StatsUpdated(Stats),
     VolumeChanged { volume: f32, muted: bool },
 }
@@ -331,7 +330,6 @@ fn run_loop(
                 }
                 let _ = tx.send(AudioEvent::Log(format!("Error: {}", e)));
                 let _ = tx.send(AudioEvent::StateChanged(StreamState::Disconnected));
-                let _ = tx.send(AudioEvent::LevelUpdated { left: 0.0, right: 0.0 });
                 let _ = tx.send(AudioEvent::Log("Reconnecting in 3s...".to_string()));
 
                 for _ in 0..30 {
@@ -345,7 +343,6 @@ fn run_loop(
     }
 
     let _ = tx.send(AudioEvent::StateChanged(StreamState::Disconnected));
-    let _ = tx.send(AudioEvent::LevelUpdated { left: 0.0, right: 0.0 });
 }
 
 #[cfg(windows)]
@@ -441,8 +438,8 @@ fn do_stream(
     running: &Arc<AtomicBool>,
     server: &str,
     port: u16,
-    target_rate: u32,
-    target_channels: u16,
+    _target_rate: u32,
+    _target_channels: u16,
     process_id: Option<u32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut tcp = TcpStream::connect(format!("{}:{}", server, port))?;
@@ -480,7 +477,7 @@ fn do_stream(
         )?;
 
         // Branch: per-process or system-wide capture
-        let (client, src_rate_val, src_ch_val, src_bits_val, is_float, mix_format_for_block_align)
+        let (client, src_rate_val, src_ch_val, src_bits_val, is_float)
             = if let Some(pid) = process_id {
                 let _ = tx.send(AudioEvent::Log(format!("Per-app capture: PID {}", pid)));
                 let client = activate_process_loopback(pid)?;
@@ -510,7 +507,7 @@ fn do_stream(
                     None,
                 )?;
 
-                (client, 48000u32, 2u16, 32u16, true, fmt)
+                (client, 48000u32, 2u16, 32u16, true)
             } else {
                 let client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
                 let mix_format_ptr = client.GetMixFormat()?;
@@ -528,12 +525,11 @@ fn do_stream(
                     None,
                 )?;
 
-                let mix_format = *mix_format_ptr;
+                let fmt_tag = (*mix_format_ptr).wFormatTag;
+                let is_float = fmt_tag == 3 || (fmt_tag == 0xFFFE && src_bits_val == 32);
                 CoTaskMemFree(Some(mix_format_ptr as *const _));
 
-                let fmt_tag = mix_format.wFormatTag;
-                let is_float = fmt_tag == 3 || (fmt_tag == 0xFFFE && src_bits_val == 32);
-                (client, src_rate_val, src_ch_val, src_bits_val, is_float, mix_format)
+                (client, src_rate_val, src_ch_val, src_bits_val, is_float)
             };
 
         let format_str = format!(
@@ -557,13 +553,14 @@ fn do_stream(
         let mut total_bytes: u64 = 0;
         let mut prev_bytes: u64 = 0;
         let mut prev_time = Instant::now();
-        let mut tick: u32 = 0;
         let mut avg_latency_ms: f64 = 0.0;
         let capture_buffer_ms: f64 = buffer_duration as f64 / 10_000.0;
 
         let src_channels = src_ch_val as usize;
-        let src_rate = src_rate_val;
-        let _block_align = mix_format_for_block_align.nBlockAlign as usize;
+
+        // Pre-allocate reusable buffers to avoid per-frame heap allocations
+        let mut float_buf: Vec<f32> = Vec::with_capacity(src_rate_val as usize / 25 * src_channels);
+        let mut pcm_buf: Vec<u8> = Vec::with_capacity(float_buf.capacity() * 2);
 
         while running.load(Ordering::Relaxed) {
             let wait_result = WaitForSingleObject(event_handle, 100);
@@ -587,44 +584,34 @@ fn do_stream(
                     }
 
                     let capture_instant = Instant::now();
+                    let sample_count = num_frames as usize * src_channels;
 
-                    let float_samples = if is_float {
+                    float_buf.clear();
+                    if is_float {
                         let floats = std::slice::from_raw_parts(
                             buffer_ptr as *const f32,
-                            num_frames as usize * src_channels,
+                            sample_count,
                         );
-                        floats.to_vec()
+                        float_buf.extend_from_slice(floats);
                     } else {
                         let shorts = std::slice::from_raw_parts(
                             buffer_ptr as *const i16,
-                            num_frames as usize * src_channels,
+                            sample_count,
                         );
-                        shorts.iter().map(|&s| s as f32 / 32768.0).collect()
-                    };
+                        float_buf.extend(shorts.iter().map(|&s| s as f32 / 32768.0));
+                    }
 
                     let _ = capture.ReleaseBuffer(num_frames);
 
-                    tick += 1;
-                    if tick % 4 == 0 {
-                        let (lvl_l, lvl_r) = calc_levels(&float_samples, src_channels);
-                        let _ = tx.send(AudioEvent::LevelUpdated { left: lvl_l, right: lvl_r });
-                    }
-
-                    let out_samples = if src_rate == target_rate && src_channels as u16 == target_channels {
-                        &float_samples
-                    } else {
-                        &float_samples
-                    };
-
                     let vol = if cached_mute { 0.0 } else { cached_volume };
-                    let mut pcm = Vec::with_capacity(out_samples.len() * 2);
-                    for &s in out_samples {
+                    pcm_buf.clear();
+                    for &s in &float_buf {
                         let scaled = (s * vol).clamp(-1.0, 1.0);
                         let v = (scaled * 32767.0) as i16;
-                        pcm.extend_from_slice(&v.to_le_bytes());
+                        pcm_buf.extend_from_slice(&v.to_le_bytes());
                     }
 
-                    if let Err(e) = tcp.write_all(&pcm) {
+                    if let Err(e) = tcp.write_all(&pcm_buf) {
                         let _ = tx.send(AudioEvent::Log(format!("Send error: {}", e)));
                         client.Stop()?;
                         let _ = CloseHandle(event_handle);
@@ -635,7 +622,7 @@ fn do_stream(
                     let chunk_latency = capture_buffer_ms + send_elapsed_ms;
                     avg_latency_ms = avg_latency_ms * 0.8 + chunk_latency * 0.2;
 
-                    total_bytes += pcm.len() as u64;
+                    total_bytes += pcm_buf.len() as u64;
                 }
             }
 
@@ -705,39 +692,3 @@ fn set_send_buffer(tcp: &TcpStream, size: u32) {
 #[cfg(not(windows))]
 fn set_send_buffer(_tcp: &TcpStream, _size: u32) {}
 
-fn calc_levels(samples: &[f32], channels: usize) -> (f32, f32) {
-    let mut sum_l: f64 = 0.0;
-    let mut sum_r: f64 = 0.0;
-    let mut count = 0usize;
-
-    if channels >= 2 {
-        for chunk in samples.chunks(channels) {
-            sum_l += (chunk[0] as f64).powi(2);
-            sum_r += (chunk.get(1).map(|&v| v).unwrap_or(chunk[0]) as f64).powi(2);
-            count += 1;
-        }
-    } else {
-        for &s in samples {
-            sum_l += (s as f64).powi(2);
-            count += 1;
-        }
-        sum_r = sum_l;
-    }
-
-    if count == 0 {
-        return (0.0, 0.0);
-    }
-
-    let rms_l = (sum_l / count as f64).sqrt() as f32;
-    let rms_r = (sum_r / count as f64).sqrt() as f32;
-
-    fn rms_to_visual(rms: f32) -> f32 {
-        if rms < 0.0001 {
-            return 0.0;
-        }
-        let db = 20.0 * rms.log10();
-        ((db + 60.0) / 60.0).clamp(0.0, 1.0)
-    }
-
-    (rms_to_visual(rms_l), rms_to_visual(rms_r))
-}

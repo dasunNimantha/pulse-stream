@@ -3,6 +3,7 @@ use crate::message::Message;
 use crate::settings::AppSettings;
 use crate::theme::{pulse_theme, ThemeMode};
 use crate::view::build_view;
+use iced::window;
 use iced::{Application, Command, Element, Subscription, Theme};
 use std::time::Duration;
 
@@ -24,9 +25,8 @@ pub struct AppState {
     pub selected_device: Option<DeviceInfo>,
     pub processes: Vec<ProcessInfo>,
     pub selected_process: Option<String>,
-    pub log_messages: Vec<String>,
-    pub level_left: f32,
-    pub level_right: f32,
+    pub log_messages: std::collections::VecDeque<String>,
+    pub scanning: bool,
 }
 
 pub struct PulseStreamApp {
@@ -35,6 +35,8 @@ pub struct PulseStreamApp {
     settings: AppSettings,
     streamer: AudioStreamer,
     audio_rx: Option<flume::Receiver<AudioEvent>>,
+    _tray_icon: Option<tray_icon::TrayIcon>,
+    tray_exit_id: Option<tray_icon::menu::MenuId>,
 }
 
 impl Application for PulseStreamApp {
@@ -81,10 +83,11 @@ impl Application for PulseStreamApp {
             selected_device,
             processes,
             selected_process: None,
-            log_messages: Vec::new(),
-            level_left: 0.0,
-            level_right: 0.0,
+            log_messages: std::collections::VecDeque::new(),
+            scanning: false,
         };
+
+        let (tray_icon, tray_exit_id) = create_tray_icon();
 
         let app = Self {
             state,
@@ -92,9 +95,17 @@ impl Application for PulseStreamApp {
             settings,
             streamer,
             audio_rx,
+            _tray_icon: tray_icon,
+            tray_exit_id,
         };
 
-        (app, Command::none())
+        let startup_cmd = if app.state.server.trim().is_empty() {
+            Command::perform(async {}, |_| Message::ScanServers)
+        } else {
+            Command::none()
+        };
+
+        (app, startup_cmd)
     }
 
     fn title(&self) -> String {
@@ -192,20 +203,14 @@ impl Application for PulseStreamApp {
                         self.state.stats_bitrate.clear();
                         self.state.stats_format.clear();
                         self.state.stats_uptime.clear();
-                        self.state.level_left = 0.0;
-                        self.state.level_right = 0.0;
                     }
                     self.state.stream_state = s.clone();
                 }
                 AudioEvent::Log(msg) => {
                     if self.state.log_messages.len() >= 200 {
-                        self.state.log_messages.remove(0);
+                        self.state.log_messages.pop_front();
                     }
-                    self.state.log_messages.push(msg);
-                }
-                AudioEvent::LevelUpdated { left, right } => {
-                    self.state.level_left = left;
-                    self.state.level_right = right;
+                    self.state.log_messages.push_back(msg);
                 }
                 AudioEvent::StatsUpdated(stats) => {
                     let br = if stats.bitrate_kbps >= 1000.0 {
@@ -229,6 +234,40 @@ impl Application for PulseStreamApp {
                 }
             },
 
+            Message::ScanServers => {
+                self.state.scanning = true;
+                let port: u16 = self.state.port.parse().unwrap_or(4714);
+                return Command::perform(
+                    async move { scan_subnet(port).await },
+                    Message::ScanResult,
+                );
+            }
+
+            Message::ScanResult(found) => {
+                self.state.scanning = false;
+                if let Some(ip) = found {
+                    self.state.server = ip;
+                }
+            }
+
+            Message::CloseRequested => {
+                if self.state.minimize_to_tray {
+                    return window::change_mode(window::Id::MAIN, window::Mode::Hidden);
+                } else {
+                    self.streamer.stop();
+                    return window::close(window::Id::MAIN);
+                }
+            }
+
+            Message::TrayRestore => {
+                return window::change_mode(window::Id::MAIN, window::Mode::Windowed);
+            }
+
+            Message::ExitApp => {
+                self.streamer.stop();
+                return window::close(window::Id::MAIN);
+            }
+
             Message::Tick => {
                 self.state.processes = crate::audio::get_audio_processes();
             }
@@ -249,6 +288,44 @@ impl Application for PulseStreamApp {
     fn subscription(&self) -> Subscription<Message> {
         let tick = iced::time::every(Duration::from_secs(3)).map(|_| Message::Tick);
 
+        let close_events = iced::event::listen_with(|event, _status| {
+            if let iced::Event::Window(id, window::Event::CloseRequested) = event {
+                let _ = id;
+                Some(Message::CloseRequested)
+            } else {
+                None
+            }
+        });
+
+        let exit_id = self.tray_exit_id.clone();
+        let tray_events = iced::subscription::unfold("tray-events", exit_id, |exit_id| async {
+            loop {
+                if let Ok(event) = tray_icon::TrayIconEvent::receiver().try_recv() {
+                    match event {
+                        tray_icon::TrayIconEvent::Click {
+                            button: tray_icon::MouseButton::Left,
+                            ..
+                        }
+                        | tray_icon::TrayIconEvent::DoubleClick {
+                            button: tray_icon::MouseButton::Left,
+                            ..
+                        } => return (Message::TrayRestore, exit_id),
+                        _ => {}
+                    }
+                }
+                if let Ok(event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
+                    if exit_id.as_ref() == Some(&event.id) {
+                        return (Message::ExitApp, exit_id);
+                    } else {
+                        return (Message::TrayRestore, exit_id);
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        });
+
+        let mut subs = vec![tick, close_events, tray_events];
+
         if let Some(rx) = &self.audio_rx {
             let rx = rx.clone();
             let audio = iced::subscription::unfold("audio-events", rx, |rx| async move {
@@ -260,10 +337,10 @@ impl Application for PulseStreamApp {
                     }
                 }
             });
-            Subscription::batch([audio, tick])
-        } else {
-            tick
+            subs.push(audio);
         }
+
+        Subscription::batch(subs)
     }
 }
 
@@ -282,6 +359,79 @@ impl PulseStreamApp {
             dark_theme: self.theme_mode == ThemeMode::Dark,
         };
         let _ = settings.save();
+    }
+}
+
+fn create_tray_icon() -> (Option<tray_icon::TrayIcon>, Option<tray_icon::menu::MenuId>) {
+    let icon = match tray_icon::Icon::from_resource(1, Some((32, 32))) {
+        Ok(i) => i,
+        Err(_) => return (None, None),
+    };
+
+    let menu = tray_icon::menu::Menu::new();
+    let open_item = tray_icon::menu::MenuItem::new("Open PulseStream", true, None);
+    let exit_item = tray_icon::menu::MenuItem::new("Exit", true, None);
+    let exit_id = exit_item.id().clone();
+    let _ = menu.append(&open_item);
+    let _ = menu.append(&tray_icon::menu::PredefinedMenuItem::separator());
+    let _ = menu.append(&exit_item);
+
+    match tray_icon::TrayIconBuilder::new()
+        .with_tooltip("PulseStream")
+        .with_icon(icon)
+        .with_menu(Box::new(menu))
+        .build()
+    {
+        Ok(tray) => (Some(tray), Some(exit_id)),
+        Err(_) => (None, None),
+    }
+}
+
+async fn scan_subnet(port: u16) -> Option<String> {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let local_ip = get_local_ip().unwrap_or(Ipv4Addr::new(192, 168, 1, 1));
+    let octets = local_ip.octets();
+    let base = format!("{}.{}.{}.", octets[0], octets[1], octets[2]);
+
+    let mut handles = Vec::new();
+    for i in 1u8..=254 {
+        let addr_str = format!("{}{}", base, i);
+        if let Ok(ip) = addr_str.parse::<IpAddr>() {
+            if ip == IpAddr::V4(local_ip) {
+                continue;
+            }
+        }
+        let addr = format!("{}:{}", addr_str, port);
+        handles.push(tokio::spawn(async move {
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(200),
+                tokio::net::TcpStream::connect(&addr),
+            )
+            .await
+            {
+                Ok(Ok(_)) => Some(addr_str),
+                _ => None,
+            }
+        }));
+    }
+
+    for handle in handles {
+        if let Ok(Some(ip)) = handle.await {
+            return Some(ip);
+        }
+    }
+
+    None
+}
+
+fn get_local_ip() -> Option<std::net::Ipv4Addr> {
+    use std::net::UdpSocket;
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    match socket.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(ip) => Some(ip),
+        _ => None,
     }
 }
 

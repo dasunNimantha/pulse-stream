@@ -42,73 +42,78 @@ pub struct ColorScheme {
 impl ColorScheme {
     pub fn dark() -> Self {
         Self {
-            accent: Color::from_rgb(0.95, 0.75, 0.25),
-            accent_hover: Color::from_rgb(1.0, 0.85, 0.35),
-            accent_dim: Color::from_rgb(0.75, 0.55, 0.15),
+            // Cyan/teal accent — evokes audio waves & streaming
+            accent: Color::from_rgb(0.0, 0.74, 0.85),       // #00BCD9
+            accent_hover: Color::from_rgb(0.15, 0.82, 0.92), // #27D1EB
+            accent_dim: Color::from_rgb(0.0, 0.55, 0.64),    // #008CA3
 
-            bg_primary: Color::from_rgb(0.08, 0.08, 0.10),
-            bg_secondary: Color::from_rgb(0.12, 0.12, 0.14),
-            bg_tertiary: Color::from_rgb(0.16, 0.16, 0.18),
-            bg_hover: Color::from_rgb(0.18, 0.18, 0.20),
+            // Cool-toned dark backgrounds
+            bg_primary: Color::from_rgb(0.05, 0.065, 0.09),    // #0D1117
+            bg_secondary: Color::from_rgb(0.086, 0.106, 0.133), // #161B22
+            bg_tertiary: Color::from_rgb(0.13, 0.15, 0.176),    // #21262D
+            bg_hover: Color::from_rgb(0.16, 0.18, 0.21),        // #292E36
 
-            surface: Color::from_rgb(0.11, 0.11, 0.13),
-            surface_hover: Color::from_rgb(0.15, 0.15, 0.17),
-            surface_active: Color::from_rgb(0.19, 0.19, 0.21),
-            surface_elevated: Color::from_rgb(0.13, 0.13, 0.15),
+            surface: Color::from_rgb(0.07, 0.086, 0.11),       // #12161C
+            surface_hover: Color::from_rgb(0.10, 0.12, 0.15),
+            surface_active: Color::from_rgb(0.14, 0.16, 0.19),
+            surface_elevated: Color::from_rgb(0.086, 0.106, 0.133),
 
-            text_primary: Color::from_rgb(0.95, 0.95, 0.97),
-            text_secondary: Color::from_rgb(0.65, 0.65, 0.70),
-            text_disabled: Color::from_rgb(0.45, 0.45, 0.50),
+            text_primary: Color::from_rgb(0.90, 0.93, 0.95),   // #E6EDFA
+            text_secondary: Color::from_rgb(0.55, 0.58, 0.62),  // #8B949E
+            text_disabled: Color::from_rgb(0.30, 0.33, 0.37),   // #4D5460
 
-            green: Color::from_rgb(0.25, 0.85, 0.45),
-            yellow: Color::from_rgb(1.0, 0.75, 0.25),
-            red: Color::from_rgb(0.95, 0.35, 0.35),
+            green: Color::from_rgb(0.25, 0.72, 0.31),  // #3FB84F
+            yellow: Color::from_rgb(0.90, 0.70, 0.15), // #E6B326
+            red: Color::from_rgb(0.97, 0.32, 0.29),    // #F85149
 
-            border: Color::from_rgb(0.22, 0.22, 0.26),
-            border_light: Color::from_rgb(0.18, 0.18, 0.22),
-            border_focus: Color::from_rgb(0.95, 0.75, 0.25),
+            border: Color::from_rgb(0.19, 0.21, 0.24),  // #30363D
+            border_light: Color::from_rgb(0.13, 0.15, 0.18),
+            border_focus: Color::from_rgb(0.0, 0.74, 0.85),
 
-            fg_on_accent: Color::from_rgb(0.1, 0.1, 0.1),
+            fg_on_accent: Color::from_rgb(0.05, 0.065, 0.09),
         }
     }
 
     pub fn light() -> Self {
         Self {
-            accent: Color::from_rgb(0.85, 0.60, 0.10),
-            accent_hover: Color::from_rgb(0.95, 0.70, 0.20),
-            accent_dim: Color::from_rgb(0.65, 0.45, 0.00),
+            accent: Color::from_rgb(0.0, 0.59, 0.65),        // #0097A7
+            accent_hover: Color::from_rgb(0.0, 0.67, 0.76),   // #00ABC1
+            accent_dim: Color::from_rgb(0.0, 0.47, 0.53),     // #007887
 
-            bg_primary: Color::from_rgb(0.97, 0.97, 0.98),
-            bg_secondary: Color::from_rgb(0.94, 0.94, 0.96),
-            bg_tertiary: Color::from_rgb(0.91, 0.91, 0.93),
-            bg_hover: Color::from_rgb(0.89, 0.89, 0.91),
+            bg_primary: Color::from_rgb(0.96, 0.97, 0.98),    // #F6F8FA
+            bg_secondary: Color::from_rgb(0.93, 0.95, 0.96),   // #EEF1F5
+            bg_tertiary: Color::from_rgb(0.88, 0.91, 0.93),    // #E1E7ED
+            bg_hover: Color::from_rgb(0.85, 0.87, 0.89),       // #D8DEE4
 
-            surface: Color::from_rgb(1.0, 1.0, 1.0),
-            surface_hover: Color::from_rgb(0.98, 0.98, 1.0),
-            surface_active: Color::from_rgb(0.95, 0.95, 0.97),
-            surface_elevated: Color::from_rgb(1.0, 1.0, 1.0),
+            surface: Color::WHITE,
+            surface_hover: Color::from_rgb(0.96, 0.97, 0.98),
+            surface_active: Color::from_rgb(0.93, 0.95, 0.96),
+            surface_elevated: Color::WHITE,
 
-            text_primary: Color::from_rgb(0.10, 0.10, 0.12),
-            text_secondary: Color::from_rgb(0.40, 0.40, 0.45),
-            text_disabled: Color::from_rgb(0.60, 0.60, 0.65),
+            text_primary: Color::from_rgb(0.12, 0.14, 0.16),   // #1F2328
+            text_secondary: Color::from_rgb(0.34, 0.38, 0.42),  // #57606A
+            text_disabled: Color::from_rgb(0.55, 0.58, 0.62),   // #8C959F
 
-            green: Color::from_rgb(0.20, 0.75, 0.40),
-            yellow: Color::from_rgb(0.90, 0.65, 0.15),
-            red: Color::from_rgb(0.90, 0.30, 0.30),
+            green: Color::from_rgb(0.10, 0.50, 0.22),  // #1A7F37
+            yellow: Color::from_rgb(0.60, 0.40, 0.0),  // #9A6700
+            red: Color::from_rgb(0.81, 0.13, 0.18),    // #CF222E
 
-            border: Color::from_rgb(0.82, 0.82, 0.87),
-            border_light: Color::from_rgb(0.88, 0.88, 0.92),
-            border_focus: Color::from_rgb(0.85, 0.60, 0.10),
+            border: Color::from_rgb(0.82, 0.84, 0.87),  // #D0D7DE
+            border_light: Color::from_rgb(0.85, 0.87, 0.89),
+            border_focus: Color::from_rgb(0.0, 0.59, 0.65),
 
             fg_on_accent: Color::WHITE,
         }
     }
 }
 
+static DARK_SCHEME: std::sync::LazyLock<ColorScheme> = std::sync::LazyLock::new(ColorScheme::dark);
+static LIGHT_SCHEME: std::sync::LazyLock<ColorScheme> = std::sync::LazyLock::new(ColorScheme::light);
+
 pub fn get_colors(mode: ThemeMode) -> ColorScheme {
     match mode {
-        ThemeMode::Dark => ColorScheme::dark(),
-        ThemeMode::Light => ColorScheme::light(),
+        ThemeMode::Dark => *DARK_SCHEME,
+        ThemeMode::Light => *LIGHT_SCHEME,
     }
 }
 
@@ -174,70 +179,6 @@ impl iced::widget::container::StyleSheet for PanelStyle {
                 color: colors.border,
                 width: 1.0,
                 radius: 8.0.into(),
-            },
-            shadow: Default::default(),
-        }
-    }
-}
-
-pub struct StatusDotStyle {
-    pub color: Color,
-}
-
-impl iced::widget::container::StyleSheet for StatusDotStyle {
-    type Style = iced::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
-        iced::widget::container::Appearance {
-            text_color: None,
-            background: Some(iced::Background::Color(self.color)),
-            border: iced::Border {
-                color: Color::TRANSPARENT,
-                width: 0.0,
-                radius: 5.0.into(),
-            },
-            shadow: Default::default(),
-        }
-    }
-}
-
-pub struct LevelBarStyle {
-    pub color: Color,
-}
-
-impl iced::widget::container::StyleSheet for LevelBarStyle {
-    type Style = iced::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
-        iced::widget::container::Appearance {
-            text_color: None,
-            background: Some(iced::Background::Color(self.color)),
-            border: iced::Border {
-                color: Color::TRANSPARENT,
-                width: 0.0,
-                radius: 2.0.into(),
-            },
-            shadow: Default::default(),
-        }
-    }
-}
-
-pub struct LevelTrackStyle {
-    pub mode: ThemeMode,
-}
-
-impl iced::widget::container::StyleSheet for LevelTrackStyle {
-    type Style = iced::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
-        let colors = get_colors(self.mode);
-        iced::widget::container::Appearance {
-            text_color: None,
-            background: Some(iced::Background::Color(colors.bg_tertiary)),
-            border: iced::Border {
-                color: Color::TRANSPARENT,
-                width: 0.0,
-                radius: 2.0.into(),
             },
             shadow: Default::default(),
         }
@@ -347,21 +288,6 @@ impl iced::widget::button::StyleSheet for DangerButtonStyle {
     fn active(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
         let colors = get_colors(self.mode);
         iced::widget::button::Appearance {
-            background: Some(iced::Background::Color(colors.surface)),
-            border: iced::Border {
-                color: colors.border,
-                width: 1.0,
-                radius: 8.0.into(),
-            },
-            text_color: colors.text_secondary,
-            shadow: Default::default(),
-            shadow_offset: iced::Vector::new(0.0, 0.0),
-        }
-    }
-
-    fn hovered(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
-        let colors = get_colors(self.mode);
-        iced::widget::button::Appearance {
             background: Some(iced::Background::Color(colors.red)),
             border: iced::Border {
                 color: colors.red,
@@ -374,12 +300,27 @@ impl iced::widget::button::StyleSheet for DangerButtonStyle {
         }
     }
 
-    fn pressed(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
-        let error_dark = Color::from_rgba(0.75, 0.20, 0.20, 1.0);
+    fn hovered(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
+        let hover_red = Color::from_rgb(1.0, 0.40, 0.40);
         iced::widget::button::Appearance {
-            background: Some(iced::Background::Color(error_dark)),
+            background: Some(iced::Background::Color(hover_red)),
             border: iced::Border {
-                color: error_dark,
+                color: hover_red,
+                width: 1.0,
+                radius: 8.0.into(),
+            },
+            text_color: Color::WHITE,
+            shadow: Default::default(),
+            shadow_offset: iced::Vector::new(0.0, 0.0),
+        }
+    }
+
+    fn pressed(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
+        let dark_red = Color::from_rgb(0.75, 0.20, 0.20);
+        iced::widget::button::Appearance {
+            background: Some(iced::Background::Color(dark_red)),
+            border: iced::Border {
+                color: dark_red,
                 width: 1.0,
                 radius: 8.0.into(),
             },
@@ -405,59 +346,11 @@ impl iced::widget::button::StyleSheet for DangerButtonStyle {
     }
 }
 
-pub struct GhostButtonStyle {
-    pub mode: ThemeMode,
-}
-
-impl iced::widget::button::StyleSheet for GhostButtonStyle {
-    type Style = iced::Theme;
-
-    fn active(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
-        let colors = get_colors(self.mode);
-        iced::widget::button::Appearance {
-            background: Some(iced::Background::Color(Color::TRANSPARENT)),
-            border: iced::Border {
-                color: Color::TRANSPARENT,
-                width: 0.0,
-                radius: 6.0.into(),
-            },
-            text_color: colors.text_secondary,
-            shadow: Default::default(),
-            shadow_offset: iced::Vector::new(0.0, 0.0),
-        }
-    }
-
-    fn hovered(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
-        let colors = get_colors(self.mode);
-        iced::widget::button::Appearance {
-            background: Some(iced::Background::Color(colors.bg_hover)),
-            border: iced::Border {
-                color: Color::TRANSPARENT,
-                width: 0.0,
-                radius: 6.0.into(),
-            },
-            text_color: colors.text_primary,
-            shadow: Default::default(),
-            shadow_offset: iced::Vector::new(0.0, 0.0),
-        }
-    }
-
-    fn pressed(&self, style: &Self::Style) -> iced::widget::button::Appearance {
-        self.hovered(style)
-    }
-
-    fn disabled(&self, style: &Self::Style) -> iced::widget::button::Appearance {
-        let mut a = self.active(style);
-        let colors = get_colors(self.mode);
-        a.text_color = colors.text_disabled;
-        a
-    }
-}
-
 // ============== Input Styles ==============
 
 pub struct InputStyle {
     pub mode: ThemeMode,
+    pub error: bool,
 }
 
 impl iced::widget::text_input::StyleSheet for InputStyle {
@@ -468,8 +361,8 @@ impl iced::widget::text_input::StyleSheet for InputStyle {
         iced::widget::text_input::Appearance {
             background: iced::Background::Color(colors.bg_secondary),
             border: iced::Border {
-                color: colors.border,
-                width: 1.0,
+                color: if self.error { colors.red } else { colors.border },
+                width: if self.error { 1.5 } else { 1.0 },
                 radius: 8.0.into(),
             },
             icon_color: colors.text_secondary,
@@ -481,11 +374,11 @@ impl iced::widget::text_input::StyleSheet for InputStyle {
         iced::widget::text_input::Appearance {
             background: iced::Background::Color(colors.bg_secondary),
             border: iced::Border {
-                color: colors.border_focus,
+                color: if self.error { colors.red } else { colors.border_focus },
                 width: 2.0,
                 radius: 8.0.into(),
             },
-            icon_color: colors.accent,
+            icon_color: if self.error { colors.red } else { colors.accent },
         }
     }
 
@@ -557,6 +450,47 @@ impl iced::widget::checkbox::StyleSheet for CheckStyle {
     }
 }
 
+pub struct ToggleStyle {
+    pub mode: ThemeMode,
+}
+
+impl iced::widget::checkbox::StyleSheet for ToggleStyle {
+    type Style = iced::Theme;
+
+    fn active(&self, _style: &Self::Style, is_checked: bool) -> iced::widget::checkbox::Appearance {
+        let colors = get_colors(self.mode);
+        iced::widget::checkbox::Appearance {
+            background: if is_checked {
+                iced::Background::Color(colors.accent)
+            } else {
+                iced::Background::Color(colors.bg_tertiary)
+            },
+            icon_color: if is_checked {
+                colors.fg_on_accent
+            } else {
+                Color::WHITE
+            },
+            border: iced::Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 12.0.into(),
+            },
+            text_color: Some(colors.text_primary),
+        }
+    }
+
+    fn hovered(&self, style: &Self::Style, is_checked: bool) -> iced::widget::checkbox::Appearance {
+        let mut a = self.active(style, is_checked);
+        let colors = get_colors(self.mode);
+        if is_checked {
+            a.background = iced::Background::Color(colors.accent_hover);
+        } else {
+            a.background = iced::Background::Color(colors.bg_hover);
+        }
+        a
+    }
+}
+
 // ============== PickList Styles ==============
 
 pub struct PickListStyle {
@@ -606,16 +540,29 @@ impl iced::overlay::menu::StyleSheet for MenuStyle {
 
     fn appearance(&self, _style: &Self::Style) -> iced::overlay::menu::Appearance {
         let colors = get_colors(self.mode);
+        let (menu_bg, highlight, border_color) = if self.mode == ThemeMode::Dark {
+            (
+                Color::from_rgb(0.14, 0.16, 0.19),
+                Color::from_rgba(colors.accent.r, colors.accent.g, colors.accent.b, 0.18),
+                Color::from_rgb(0.25, 0.28, 0.32),
+            )
+        } else {
+            (
+                Color::WHITE,
+                Color::from_rgba(colors.accent.r, colors.accent.g, colors.accent.b, 0.10),
+                Color::from_rgb(0.78, 0.80, 0.84),
+            )
+        };
         iced::overlay::menu::Appearance {
             text_color: colors.text_primary,
-            background: iced::Background::Color(colors.surface_elevated),
+            background: iced::Background::Color(menu_bg),
             border: iced::Border {
-                color: colors.border,
+                color: border_color,
                 width: 1.0,
-                radius: 8.0.into(),
+                radius: 6.0.into(),
             },
-            selected_text_color: colors.fg_on_accent,
-            selected_background: iced::Background::Color(colors.accent),
+            selected_text_color: colors.text_primary,
+            selected_background: iced::Background::Color(highlight),
         }
     }
 }

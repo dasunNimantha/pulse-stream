@@ -16,7 +16,7 @@ pub struct AppSettings {
     pub device_id: Option<String>,
     #[serde(default)]
     pub auto_connect: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub minimize_to_tray: bool,
     #[serde(default = "default_true")]
     pub dark_theme: bool,
@@ -37,7 +37,7 @@ impl Default for AppSettings {
             channels: default_channels(),
             device_id: None,
             auto_connect: false,
-            minimize_to_tray: false,
+            minimize_to_tray: true,
             dark_theme: true,
         }
     }

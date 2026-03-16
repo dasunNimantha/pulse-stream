@@ -4,6 +4,7 @@ fn main() {
         let mut res = winresource::WindowsResource::new();
         res.set("ProductName", "PulseStream");
         res.set("FileDescription", "Stream Windows audio to PulseAudio");
+        res.set_icon("app.ico");
         let _ = res.compile();
     }
 }
