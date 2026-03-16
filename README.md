@@ -53,14 +53,65 @@ cargo test
 
 ## Usage
 
-1. Start a PulseAudio TCP module on the receiving machine:
-   ```bash
-   pactl load-module module-simple-protocol-tcp rate=48000 format=s16le channels=2 source=0 record=false port=4714
-   ```
-2. Launch PulseStream on Windows
-3. Enter the server IP and port, or click the scan button to auto-detect
-4. Select an audio device and optionally a specific application
-5. Click **Connect**
+### Receiver setup (Linux)
+
+You have two options. **Option A** is simpler but adds ~50–100 ms of latency from PulseAudio's internal buffering. **Option B** bypasses PulseAudio entirely and plays through ALSA with minimal buffering for the lowest possible latency.
+
+#### Option A: PulseAudio module (simple, higher latency)
+
+```bash
+pactl load-module module-simple-protocol-tcp rate=48000 format=s16le channels=2 source=0 record=false port=4714
+```
+
+#### Option B: Direct ALSA receiver (low latency, recommended)
+
+This script listens on a TCP port and pipes audio straight to ALSA with a small buffer, skipping PulseAudio's buffering entirely:
+
+```bash
+#!/bin/bash
+# pulse-stream-recv.sh — low-latency TCP-to-ALSA receiver
+PORT=${1:-4714}
+RATE=48000
+CHANNELS=2
+FORMAT=S16_LE
+# Buffer: 256 frames × 2 periods = ~10ms at 48kHz
+BUFFER_FRAMES=256
+PERIODS=2
+
+echo "Listening on port $PORT (${RATE}Hz ${CHANNELS}ch ${FORMAT})"
+echo "Press Ctrl+C to stop"
+
+while true; do
+  ncat -l -p "$PORT" | aplay \
+    -t raw \
+    -f "$FORMAT" \
+    -r "$RATE" \
+    -c "$CHANNELS" \
+    --buffer-size=$((BUFFER_FRAMES * CHANNELS * 2 * PERIODS)) \
+    --period-size=$((BUFFER_FRAMES * CHANNELS * 2)) \
+    -D default \
+    2>/dev/null
+  echo "Client disconnected, waiting for reconnect..."
+done
+```
+
+Make it executable and run:
+
+```bash
+chmod +x pulse-stream-recv.sh
+./pulse-stream-recv.sh 4714
+```
+
+> Requires `ncat` (from nmap) and `alsa-utils`. Install with:
+> `sudo apt install ncat alsa-utils` (Debian/Ubuntu) or
+> `sudo pacman -S nmap alsa-utils` (Arch).
+
+### Sender setup (Windows)
+
+1. Launch PulseStream on Windows
+2. Enter the server IP and port, or click the scan button to auto-detect
+3. Select an audio device and optionally a specific application
+4. Click **Connect**
 
 ### Configuration
 
@@ -104,36 +155,39 @@ The end-to-end audio pipeline has several stages, each contributing delay:
 
 | Stage | Typical delay | Notes |
 | ----- | ------------- | ----- |
-| WASAPI capture buffer | ~10 ms | Configurable; set to 10 ms (100,000 × 100 ns units) |
+| WASAPI capture buffer | ~10 ms | Set to 10 ms (100,000 × 100 ns units) |
 | PCM conversion | < 0.1 ms | Zero-copy i16 conversion via direct memory write |
-| TCP transmission | 0.1–2 ms | `TCP_NODELAY` enabled, send buffer set to 1920 bytes |
-| Network transit | 0.1–1 ms | Depends on your LAN (wired vs WiFi) |
-| PulseAudio receive buffer | 10–50 ms | Controlled by `module-simple-protocol-tcp` config |
-| ALSA playback buffer | 5–20 ms | Depends on the sound server / sink configuration |
+| TCP send | 0.1–2 ms | `TCP_NODELAY` enabled, 1920-byte send buffer |
+| Network transit | 0.1–1 ms | Wired LAN recommended |
+| **Receiver buffer** | **10–100 ms** | **This is the dominant source of delay** |
 
-**Realistic total: 25–80 ms** depending on network and PulseAudio configuration.
+### Why there's a noticeable delay
 
-### Tips to reduce latency on the receiver
+The sender side (WASAPI capture → TCP send) adds only ~12 ms total. The problem is on the **receiver**:
 
-```bash
-# Use a smaller PulseAudio buffer (e.g. 1024 fragments)
-pactl load-module module-simple-protocol-tcp \
-  rate=48000 format=s16le channels=2 \
-  source=0 record=false port=4714
+- **`module-simple-protocol-tcp`** has an internal buffer that cannot be configured through module parameters. It buffers roughly 50–100 ms of audio before starting playback, and there is no clock synchronization. This delay is inherent to the module — both this Rust app and the C# version experience the same lag.
+- By contrast, native PulseAudio networking (e.g. `module-native-protocol-tcp` or `module-tunnel-sink` used between two Linux machines) has proper timing synchronization and shared-memory IPC, which is why Linux-to-Linux streaming has near-zero perceptible delay.
 
-# Lower the default ALSA buffer in /etc/pulse/daemon.conf
-default-fragments = 2
-default-fragment-size-msec = 5
-```
+### Recommended: bypass PulseAudio on the receiver
 
-Use a wired Ethernet connection instead of WiFi for the most consistent latency.
+Use **Option B** from the [receiver setup](#option-b-direct-alsa-receiver-low-latency-recommended) above. The direct ALSA receiver script uses a ~10 ms buffer (256 frames × 2 periods at 48 kHz), bringing the total end-to-end latency down to **~25 ms** — low enough that delay is not perceptible for most use cases.
+
+### Additional tips
+
+- Use a **wired Ethernet** connection — WiFi adds jitter and occasional 5–20 ms spikes
+- If using PulseAudio (Option A), lower the daemon buffer in `/etc/pulse/daemon.conf`:
+  ```
+  default-fragments = 2
+  default-fragment-size-msec = 5
+  ```
+- Restart PulseAudio after changing daemon.conf: `systemctl --user restart pulseaudio`
 
 ## Limitations
 
 - **Windows only** — WASAPI is a Windows API; the sender must run on Windows 10 or later
 - **No audio encoding** — streams raw PCM (s16le), so bandwidth usage is proportional to sample rate and channel count (~1.5 Mbps at 48 kHz stereo). Not suitable over the internet or slow networks
 - **No encryption** — audio is sent as plaintext TCP. Use only on trusted local networks
-- **Receiver must run PulseAudio** — specifically `module-simple-protocol-tcp`. Does not work with plain ALSA, PipeWire (without PulseAudio compat), or other sound servers out of the box
+- **Receiver must run PulseAudio or ALSA** — works with `module-simple-protocol-tcp` (higher latency) or the provided ALSA receiver script (lower latency). No native PipeWire or macOS/Windows receiver support
 - **Single receiver** — streams to one TCP endpoint at a time; no multicast or multi-client support
 - **No sample rate conversion** — the sender captures at the device's native rate and sends as-is. The `rate` and `channels` fields configure the PulseAudio module expectation but do not resample
 - **Per-app capture requires Windows 10 2004+** — process loopback (`AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK`) is only available on Windows 10 version 2004 and later
