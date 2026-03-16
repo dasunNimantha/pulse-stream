@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use iced::{Application, Font, Pixels, Settings};
-use pulse_stream_rs::PulseStreamApp;
+use pulse_stream::PulseStreamApp;
 
 fn main() -> iced::Result {
     PulseStreamApp::run(Settings {

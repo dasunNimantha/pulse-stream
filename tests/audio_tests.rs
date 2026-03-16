@@ -1,4 +1,4 @@
-use pulse_stream_rs::audio::{AudioStreamer, DeviceInfo, ProcessInfo, Stats, StreamState};
+use pulse_stream::audio::{AudioStreamer, DeviceInfo, ProcessInfo, Stats, StreamState};
 use std::time::Duration;
 
 // ==================== Data structures ====================
@@ -182,11 +182,11 @@ fn streamer_emits_events_on_connection_failure() {
 
     while let Ok(event) = rx.try_recv() {
         match event {
-            pulse_stream_rs::audio::AudioEvent::StateChanged(StreamState::Connecting) => {
+            pulse_stream::audio::AudioEvent::StateChanged(StreamState::Connecting) => {
                 got_connecting = true
             }
-            pulse_stream_rs::audio::AudioEvent::Log(_) => got_log = true,
-            pulse_stream_rs::audio::AudioEvent::StateChanged(StreamState::Disconnected) => {
+            pulse_stream::audio::AudioEvent::Log(_) => got_log = true,
+            pulse_stream::audio::AudioEvent::StateChanged(StreamState::Disconnected) => {
                 got_disconnected = true
             }
             _ => {}
@@ -216,7 +216,7 @@ fn streamer_ignores_double_start() {
 
 #[test]
 fn get_output_devices_always_has_default() {
-    let devices = pulse_stream_rs::audio::get_output_devices();
+    let devices = pulse_stream::audio::get_output_devices();
     assert!(!devices.is_empty());
     assert_eq!(devices[0].name, "Default");
     assert!(devices[0].id.is_empty());
@@ -224,7 +224,7 @@ fn get_output_devices_always_has_default() {
 
 #[test]
 fn get_audio_processes_returns_vec() {
-    let processes = pulse_stream_rs::audio::get_audio_processes();
+    let processes = pulse_stream::audio::get_audio_processes();
     // On CI or headless, this may be empty — just confirm it doesn't crash
     let _ = processes.len();
 }

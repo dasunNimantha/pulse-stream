@@ -1,7 +1,7 @@
-use pulse_stream_rs::app::AppState;
-use pulse_stream_rs::audio::{DeviceInfo, StreamState};
+use pulse_stream::app::AppState;
+use pulse_stream::audio::{DeviceInfo, StreamState};
 
-use pulse_stream_rs::view::{
+use pulse_stream::view::{
     all_fields_valid, is_valid_channels, is_valid_port, is_valid_rate, is_valid_server,
 };
 

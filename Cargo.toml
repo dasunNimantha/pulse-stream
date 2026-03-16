@@ -1,5 +1,5 @@
 [package]
-name = "pulse-stream-rs"
+name = "pulse-stream"
 version = "0.1.0"
 edition = "2021"
 description = "Stream Windows audio to PulseAudio"

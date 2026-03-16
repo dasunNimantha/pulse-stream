@@ -36,6 +36,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: PulseStream ${{ steps.version.outputs.VERSION }}
+          name: ${{ steps.version.outputs.VERSION }}
           generate_release_notes: true
-          files: target/release/pulse-stream-rs.exe
+          files: target/release/pulse-stream.exe

@@ -1,4 +1,4 @@
-use pulse_stream_rs::settings::AppSettings;
+use pulse_stream::settings::AppSettings;
 
 #[test]
 fn default_settings_values() {

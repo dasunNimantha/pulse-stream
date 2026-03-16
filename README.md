@@ -35,7 +35,7 @@ Grab the latest `.exe` from the [Releases](https://github.com/dasunNimantha/puls
 cargo build --release
 ```
 
-The compiled binary will be at `target/release/pulse-stream-rs.exe`.
+The compiled binary will be at `target/release/pulse-stream.exe`.
 
 ### Run
 

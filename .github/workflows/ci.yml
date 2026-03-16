@@ -60,5 +60,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pulse-stream-rs
-          path: target/release/pulse-stream-rs.exe
+          name: pulse-stream
+          path: target/release/pulse-stream.exe

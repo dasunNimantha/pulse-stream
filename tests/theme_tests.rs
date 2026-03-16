@@ -1,4 +1,4 @@
-use pulse_stream_rs::theme::{get_colors, pulse_theme, ThemeMode};
+use pulse_stream::theme::{get_colors, pulse_theme, ThemeMode};
 
 // ==================== ColorScheme properties ====================
 
