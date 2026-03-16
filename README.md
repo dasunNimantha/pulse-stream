@@ -106,6 +106,46 @@ chmod +x pulse-stream-recv.sh
 > `sudo apt install ncat alsa-utils` (Debian/Ubuntu) or
 > `sudo pacman -S nmap alsa-utils` (Arch).
 
+#### Persisting across reboots (systemd)
+
+To run the ALSA receiver as a service that starts on boot and auto-reconnects:
+
+1. Copy the script above to `/usr/local/bin/pulse-stream-recv.sh` and make it executable:
+
+```bash
+sudo chmod +x /usr/local/bin/pulse-stream-recv.sh
+```
+
+2. Create the service file:
+
+```bash
+sudo tee /etc/systemd/system/pulse-stream-recv.service > /dev/null << 'EOF'
+[Unit]
+Description=PulseStream low-latency ALSA receiver
+After=network.target sound.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/pulse-stream-recv.sh 4714
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+3. Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable pulse-stream-recv.service
+sudo systemctl start pulse-stream-recv.service
+```
+
+Check status with `systemctl status pulse-stream-recv.service`. The service automatically restarts when a stream disconnects and is ready for the next connection.
+
 ### Sender setup (Windows)
 
 1. Launch PulseStream on Windows
