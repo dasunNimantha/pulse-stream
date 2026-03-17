@@ -4,7 +4,9 @@ use iced::{Application, Font, Pixels, Settings};
 use pulse_stream::PulseStreamApp;
 
 fn main() -> iced::Result {
+    let start_minimized = std::env::args().any(|a| a == "--minimized");
     PulseStreamApp::run(Settings {
+        flags: start_minimized,
         window: iced::window::Settings {
             size: iced::Size::new(420.0, 465.0),
             resizable: false,

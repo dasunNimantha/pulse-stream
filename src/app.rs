@@ -43,9 +43,9 @@ impl Application for PulseStreamApp {
     type Message = Message;
     type Theme = Theme;
     type Executor = iced::executor::Default;
-    type Flags = ();
+    type Flags = bool;
 
-    fn new(_flags: ()) -> (Self, Command<Message>) {
+    fn new(start_minimized: bool) -> (Self, Command<Message>) {
         let settings = AppSettings::load();
         let streamer = AudioStreamer::new();
         let audio_rx = Some(streamer.event_receiver());
@@ -106,7 +106,8 @@ impl Application for PulseStreamApp {
 
         let mut cmds = Vec::new();
 
-        if app.state.minimize_to_tray {
+        // Only start hidden when launched at Windows boot (--minimized), not when user opens the app
+        if start_minimized && app.state.minimize_to_tray {
             cmds.push(window::change_mode(window::Id::MAIN, window::Mode::Hidden));
         }
 
@@ -473,6 +474,7 @@ fn toggle_startup_registry(enable: bool) {
 
     // Use reg.exe for simplicity
     if enable {
+        // Pass --minimized so we only hide to tray when started at boot, not when user opens the app
         let _ = std::process::Command::new("reg")
             .args([
                 "add",
@@ -482,7 +484,7 @@ fn toggle_startup_registry(enable: bool) {
                 "/t",
                 "REG_SZ",
                 "/d",
-                &format!("\"{}\"", exe_str),
+                &format!("\"{}\" --minimized", exe_str),
                 "/f",
             ])
             .output();

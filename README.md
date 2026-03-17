@@ -137,6 +137,59 @@ sudo systemctl start pulse-stream-recv.service
 
 Check status with `systemctl status pulse-stream-recv.service`. The service automatically restarts when a stream disconnects and is ready for the next connection.
 
+#### Watchdog (optional)
+
+After long uptime the receiver can occasionally end up with nothing listening on port 4714 (the script is between `ncat` restarts). A watchdog restarts the service only when the port has **no activity** (no listener and no active connection). It must not restart while a client is connected (ncat is then ESTABLISHED, not LISTEN).
+
+1. Create the watchdog script:
+
+```bash
+sudo tee /usr/local/bin/pulse-stream-recv-watchdog.sh > /dev/null << 'EOF'
+#!/bin/bash
+# Only restart if port 4714 has no activity (no LISTEN, no ESTABLISHED).
+# When a client is connected, ncat is ESTABLISHED so we must not restart.
+ss -tnp | grep -q ':4714 ' && exit 0
+systemctl restart pulse-stream-recv.service
+EOF
+sudo chmod +x /usr/local/bin/pulse-stream-recv-watchdog.sh
+```
+
+2. Create the timer and oneshot service:
+
+```bash
+sudo tee /etc/systemd/system/pulse-stream-recv-watchdog.service > /dev/null << 'EOF'
+[Unit]
+Description=PulseStream receiver watchdog - restart if port 4714 not listening
+After=pulse-stream-recv.service network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pulse-stream-recv-watchdog.sh
+EOF
+
+sudo tee /etc/systemd/system/pulse-stream-recv-watchdog.timer > /dev/null << 'EOF'
+[Unit]
+Description=Run PulseStream receiver watchdog every 2 minutes
+
+[Timer]
+OnCalendar=*:0/2
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+```
+
+3. Enable and start the timer:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable pulse-stream-recv-watchdog.timer
+sudo systemctl start pulse-stream-recv-watchdog.timer
+```
+
+The watchdog runs every 2 minutes. If nothing is listening on 4714, it restarts `pulse-stream-recv.service` so the sender can connect again without manual intervention.
+
 ### Sender setup (Windows)
 
 1. Launch PulseStream on Windows
@@ -195,7 +248,7 @@ The end-to-end audio pipeline has several stages, each contributing delay:
 
 ### Where the delay comes from
 
-The sender side (WASAPI capture → TCP send) adds only ~12 ms total. The remaining delay is the **ALSA receiver buffer** — configured at ~10 ms (256 frames × 2 periods at 48 kHz), bringing the total end-to-end latency to **~25 ms**, which is low enough that delay is not perceptible for most use cases.
+The sender side (WASAPI capture → TCP send) adds ~12 ms total. The **ALSA receiver buffer** adds ~10 ms (256 frames × 2 periods at 48 kHz), for **~25 ms** total — low enough that delay is not perceptible for most use cases.
 
 ### Additional tips
 

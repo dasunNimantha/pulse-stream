@@ -17,7 +17,9 @@ use windows::Win32::Media::Audio::*;
 #[cfg(windows)]
 use windows::Win32::System::Com::*;
 #[cfg(windows)]
-use windows::Win32::System::Threading::*;
+use windows::Win32::System::Threading::{
+    GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_ABOVE_NORMAL, *,
+};
 
 #[derive(Debug, Clone)]
 pub enum StreamState {
@@ -194,6 +196,7 @@ unsafe fn get_device_name(device: &IMMDevice) -> Option<String> {
 
     let store: IPropertyStore = device.OpenPropertyStore(STGM(0)).ok()?;
 
+    // PKEY_Device_FriendlyName
     let key = windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY {
         fmtid: windows::core::GUID::from_values(
             0xa45c254e,
@@ -206,18 +209,26 @@ unsafe fn get_device_name(device: &IMMDevice) -> Option<String> {
 
     let value = store.GetValue(&key).ok()?;
 
-    // In windows crate 0.58, PROPVARIANT exposes a Debug representation
-    // that includes the string value. Parse it or use to_string if available.
-    // As a reliable fallback, serialize via Debug format.
-    let dbg = format!("{:?}", value);
-    // Debug output looks like: PROPVARIANT { ... "DeviceName" ... }
-    // Try extracting a quoted string from debug output
-    if let Some(start) = dbg.find('"') {
-        if let Some(end) = dbg[start + 1..].find('"') {
-            return Some(dbg[start + 1..start + 1 + end].to_string());
-        }
+    // VT_LPWSTR = 31; extract the wide string pointer from the PROPVARIANT union
+    let raw = &*(&value as *const _ as *const PROPVARIANT_RAW);
+    if raw.vt != 31 {
+        return None;
     }
-    None
+    let pwstr = raw.val as *const u16;
+    if pwstr.is_null() {
+        return None;
+    }
+    let len = (0..).take_while(|&i| *pwstr.add(i) != 0).count();
+    let slice = std::slice::from_raw_parts(pwstr, len);
+    Some(String::from_utf16_lossy(slice))
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct PROPVARIANT_RAW {
+    vt: u16,
+    _pad: [u16; 3],
+    val: usize,
 }
 
 #[cfg(windows)]
@@ -449,11 +460,22 @@ fn do_stream(
     _target_channels: u16,
     process_id: Option<u32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut tcp = TcpStream::connect(format!("{}:{}", server, port))?;
+    let tcp = TcpStream::connect(format!("{}:{}", server, port))?;
     tcp.set_nodelay(true)?;
     tcp.set_write_timeout(Some(Duration::from_secs(3)))?;
-    // Tiny send buffer to prevent OS from batching/delaying small writes
-    set_send_buffer(&tcp, 1920);
+    // Send buffer: enough to absorb brief TCP delays without dropping chunks
+    set_send_buffer(&tcp, 8192);
+
+    // Writer thread: capture never blocks on TCP; when dialog opens and write blocks, we drop chunks instead of stalling
+    let (tx_chunk, rx_chunk) = flume::bounded::<Vec<u8>>(16);
+    let writer_handle = std::thread::spawn(move || {
+        let mut stream = tcp;
+        while let Ok(buf) = rx_chunk.recv() {
+            if stream.write_all(&buf).is_err() {
+                break;
+            }
+        }
+    });
 
     let _ = tx.send(AudioEvent::StateChanged(StreamState::Connected));
     let _ = tx.send(AudioEvent::Log(format!("Connected to {}:{}", server, port)));
@@ -477,7 +499,10 @@ fn do_stream(
             muted: cached_mute,
         });
 
-        // 10ms buffer in 100ns units — lower = less capture latency
+        // Raise capture thread priority so we're less likely to stall when dialogs open (e.g. Save)
+        let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+
+        // 10ms buffer in 100ns units — low capture latency
         let buffer_duration: i64 = 100_000;
 
         let event_handle = CreateEventW(
@@ -573,8 +598,16 @@ fn do_stream(
         let mut float_buf: Vec<f32> = Vec::with_capacity(src_rate_val as usize / 25 * src_channels);
         let mut pcm_buf: Vec<u8> = Vec::with_capacity(float_buf.capacity() * 2);
 
+        // 10ms silence for timeout injection: when WASAPI doesn't signal (e.g. Save dialog), send silence so receiver doesn't freeze
+        let silence_10ms_len = (src_rate_val as usize * src_channels * 2) / 100;
+        let silence_chunk: Vec<u8> = vec![0u8; silence_10ms_len];
+
         while running.load(Ordering::Relaxed) {
             let wait_result = WaitForSingleObject(event_handle, 100);
+            if wait_result != WAIT_OBJECT_0 {
+                // WASAPI didn't signal (e.g. Save dialog); inject silence so the stream keeps moving
+                let _ = tx_chunk.try_send(silence_chunk.clone());
+            }
             if wait_result == WAIT_OBJECT_0 {
                 loop {
                     let mut buffer_ptr = std::ptr::null_mut();
@@ -620,18 +653,13 @@ fn do_stream(
                         *out = ((s * vol).clamp(-1.0, 1.0) * 32767.0) as i16;
                     }
 
-                    if let Err(e) = tcp.write_all(&pcm_buf) {
-                        let _ = tx.send(AudioEvent::Log(format!("Send error: {}", e)));
-                        client.Stop()?;
-                        let _ = CloseHandle(event_handle);
-                        return Err(e.into());
+                    if tx_chunk.try_send(pcm_buf.clone()).is_ok() {
+                        total_bytes += pcm_buf.len() as u64;
                     }
 
                     let send_elapsed_ms = capture_instant.elapsed().as_secs_f64() * 1000.0;
                     let chunk_latency = capture_buffer_ms + send_elapsed_ms;
                     avg_latency_ms = avg_latency_ms * 0.8 + chunk_latency * 0.2;
-
-                    total_bytes += pcm_buf.len() as u64;
                 }
             }
 
@@ -664,6 +692,9 @@ fn do_stream(
                 }
             }
         }
+
+        drop(tx_chunk);
+        let _ = writer_handle.join();
 
         client.Stop()?;
         let _ = CloseHandle(event_handle);

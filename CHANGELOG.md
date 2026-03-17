@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.2] - 2026-03-17
+
+### Fixed
+- **Audio stutter on dialog open** — moved TCP writes to a dedicated writer thread so the capture loop never blocks on network I/O
+- **Stutter on first Save dialog** — inject silence when WASAPI stops delivering buffers during system dialog loading
+- **Chunk drops under brief TCP delays** — increased bounded channel capacity (3 → 16) and TCP send buffer (1920 → 8192 bytes)
+- **Device names not showing** — fixed PROPVARIANT string extraction to properly read `PKEY_Device_FriendlyName` from WASAPI; devices now show real names instead of "Audio Device 1"
+
+### Added
+- **Start minimized only at boot** — `--minimized` flag passed via registry so the window only hides when launched by Windows startup, not when the user opens the app manually
+- Receiver watchdog systemd timer — restarts the ALSA receiver if port 4714 has no activity
+
+### Changed
+- WASAPI capture buffer restored to 10ms for lower latency
+- README updated with watchdog setup and corrected latency figures
+
 ## [0.1.1] - 2026-03-16
 
 ### Added
