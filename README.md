@@ -69,10 +69,11 @@ FORMAT=S16_LE
 BUFFER_FRAMES=256
 PERIODS=2
 
-echo "Listening on port $PORT (${RATE}Hz ${CHANNELS}ch ${FORMAT})"
-echo "Press Ctrl+C to stop"
-
 while true; do
+  # Kill any stale ncat still holding the port from a previous cycle
+  pkill -f "ncat -l -p $PORT" 2>/dev/null
+  sleep 0.3
+
   ncat -l -p "$PORT" | aplay \
     -t raw \
     -f "$FORMAT" \
@@ -82,7 +83,8 @@ while true; do
     --period-size=$((BUFFER_FRAMES * CHANNELS * 2)) \
     -D default \
     2>/dev/null
-  echo "Client disconnected, waiting for reconnect..."
+
+  sleep 0.5
 done
 ```
 
@@ -137,62 +139,7 @@ sudo systemctl start pulse-stream-recv.service
 
 Check status with `systemctl status pulse-stream-recv.service`. The service automatically restarts when a stream disconnects and is ready for the next connection.
 
-#### Watchdog (optional)
-
-After long uptime the receiver can occasionally end up with nothing listening on port 4714 (the script is between `ncat` restarts). A watchdog restarts the service when the port has **no healthy activity**: no **LISTEN** and no **ESTABLISHED** socket.
-
-**Why not match any line with `:4714`?** After a client disconnects, TCP can linger in states like **FIN-WAIT-2** or **TIME-WAIT**. A naive `ss | grep :4714` still finds those sockets, so the watchdog thinks everything is fine while `ncat` is stuck and **no longer accepts new connections**. The script below only treats **listening** and **established** sockets as healthy.
-
-It must not restart while a client is connected (`ncat` is then ESTABLISHED).
-
-1. Create the watchdog script:
-
-```bash
-sudo tee /usr/local/bin/pulse-stream-recv-watchdog.sh > /dev/null << 'EOF'
-#!/bin/bash
-# Healthy: LISTEN (waiting for clients) or ESTABLISHED (active stream).
-# Stale FIN-WAIT-2 / TIME-WAIT / CLOSE-WAIT must NOT skip a restart.
-ss -tnp state established state listening | grep -q ':4714 ' && exit 0
-systemctl restart pulse-stream-recv.service
-EOF
-sudo chmod +x /usr/local/bin/pulse-stream-recv-watchdog.sh
-```
-
-2. Create the timer and oneshot service:
-
-```bash
-sudo tee /etc/systemd/system/pulse-stream-recv-watchdog.service > /dev/null << 'EOF'
-[Unit]
-Description=PulseStream receiver watchdog - restart if port 4714 not listening
-After=pulse-stream-recv.service network.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/pulse-stream-recv-watchdog.sh
-EOF
-
-sudo tee /etc/systemd/system/pulse-stream-recv-watchdog.timer > /dev/null << 'EOF'
-[Unit]
-Description=Run PulseStream receiver watchdog every 2 minutes
-
-[Timer]
-OnCalendar=*:0/2
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-```
-
-3. Enable and start the timer:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable pulse-stream-recv-watchdog.timer
-sudo systemctl start pulse-stream-recv-watchdog.timer
-```
-
-The watchdog runs every 2 minutes. If there is no **LISTEN** or **ESTABLISHED** socket on 4714, it restarts `pulse-stream-recv.service` so the sender can connect again without manual intervention.
+The receiver script handles stale connections internally — it kills any leftover `ncat` process holding the port before each listen cycle. Combined with systemd's `Restart=always`, no external watchdog is needed.
 
 ### Sender setup (Windows)
 
