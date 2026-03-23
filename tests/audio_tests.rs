@@ -152,7 +152,7 @@ fn streamer_start_sets_running() {
     let mut streamer = AudioStreamer::new();
     let _rx = streamer.event_receiver();
 
-    streamer.start("127.0.0.1".to_string(), 4714, 48000, 2, None, None);
+    streamer.start("127.0.0.1".to_string(), 4714, 48000, 2, None, None, false);
     assert!(streamer.is_running());
 
     streamer.stop();
@@ -171,6 +171,7 @@ fn streamer_emits_events_on_connection_failure() {
         2,
         None,
         None,
+        false,
     );
 
     std::thread::sleep(Duration::from_millis(500));
@@ -203,10 +204,10 @@ fn streamer_ignores_double_start() {
     let mut streamer = AudioStreamer::new();
     let _rx = streamer.event_receiver();
 
-    streamer.start("127.0.0.1".to_string(), 1, 48000, 2, None, None);
+    streamer.start("127.0.0.1".to_string(), 1, 48000, 2, None, None, false);
     assert!(streamer.is_running());
 
-    streamer.start("127.0.0.1".to_string(), 2, 48000, 2, None, None);
+    streamer.start("127.0.0.1".to_string(), 2, 48000, 2, None, None, false);
     assert!(streamer.is_running());
 
     streamer.stop();

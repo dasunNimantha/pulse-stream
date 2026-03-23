@@ -20,6 +20,8 @@ pub struct AppSettings {
     pub start_with_windows: bool,
     #[serde(default = "default_true")]
     pub minimize_to_tray: bool,
+    #[serde(default)]
+    pub mute_local_output: bool,
     #[serde(default = "default_true")]
     pub dark_theme: bool,
 }
@@ -51,6 +53,7 @@ impl Default for AppSettings {
             auto_connect: false,
             start_with_windows: true,
             minimize_to_tray: true,
+            mute_local_output: false,
             dark_theme: true,
         }
     }

@@ -16,6 +16,7 @@ pub struct AppState {
     pub auto_connect: bool,
     pub start_with_windows: bool,
     pub minimize_to_tray: bool,
+    pub mute_local_output: bool,
     pub volume_text: String,
     pub show_quality_warning: bool,
     pub stats_bitrate: String,
@@ -74,6 +75,7 @@ impl Application for PulseStreamApp {
             auto_connect: settings.auto_connect,
             start_with_windows: settings.start_with_windows,
             minimize_to_tray: settings.minimize_to_tray,
+            mute_local_output: settings.mute_local_output,
             volume_text: String::new(),
             show_quality_warning: false,
             stats_bitrate: String::new(),
@@ -157,7 +159,7 @@ impl Application for PulseStreamApp {
 
                 self.save_settings();
                 self.streamer
-                    .start(server, port, rate, channels, device_id, process_id);
+                    .start(server, port, rate, channels, device_id, process_id, self.state.mute_local_output);
             }
 
             Message::Disconnect => {
@@ -202,6 +204,10 @@ impl Application for PulseStreamApp {
             }
             Message::ToggleMinimizeToTray(v) => {
                 self.state.minimize_to_tray = v;
+                self.save_settings();
+            }
+            Message::ToggleMuteLocalOutput(v) => {
+                self.state.mute_local_output = v;
                 self.save_settings();
             }
 
@@ -383,6 +389,7 @@ impl PulseStreamApp {
             auto_connect: self.state.auto_connect,
             start_with_windows: self.state.start_with_windows,
             minimize_to_tray: self.state.minimize_to_tray,
+            mute_local_output: self.state.mute_local_output,
             dark_theme: self.theme_mode == ThemeMode::Dark,
         };
         let _ = settings.save();

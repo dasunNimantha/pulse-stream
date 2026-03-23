@@ -93,6 +93,7 @@ impl AudioStreamer {
         channels: u16,
         _device_id: Option<String>,
         process_id: Option<u32>,
+        mute_local_output: bool,
     ) {
         if self.running.load(Ordering::Relaxed) {
             return;
@@ -106,7 +107,7 @@ impl AudioStreamer {
             std::thread::Builder::new()
                 .name("pulse-stream-audio".to_string())
                 .spawn(move || {
-                    run_loop(&tx, &running, &server, port, rate, channels, process_id);
+                    run_loop(&tx, &running, &server, port, rate, channels, process_id, mute_local_output);
                 })
                 .expect("failed to spawn audio thread"),
         );
@@ -330,6 +331,7 @@ fn run_loop(
     rate: u32,
     channels: u16,
     process_id: Option<u32>,
+    mute_local_output: bool,
 ) {
     while running.load(Ordering::Relaxed) {
         let _ = tx.send(AudioEvent::StateChanged(StreamState::Connecting));
@@ -338,7 +340,7 @@ fn run_loop(
             server, port
         )));
 
-        match do_stream(tx, running, server, port, rate, channels, process_id) {
+        match do_stream(tx, running, server, port, rate, channels, process_id, mute_local_output) {
             Ok(()) => {}
             Err(e) => {
                 if !running.load(Ordering::Relaxed) {
@@ -459,6 +461,7 @@ fn do_stream(
     _target_rate: u32,
     _target_channels: u16,
     process_id: Option<u32>,
+    mute_local_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let tcp = TcpStream::connect(format!("{}:{}", server, port))?;
     tcp.set_nodelay(true)?;
@@ -494,6 +497,14 @@ fn do_stream(
             let b: BOOL = ep_vol.GetMute()?;
             b.as_bool()
         };
+
+        // Mute local speakers when requested; remember original state to restore later
+        let original_mute = cached_mute;
+        if mute_local_output && !cached_mute {
+            let _ = ep_vol.SetMute(BOOL::from(true), std::ptr::null());
+            cached_mute = true;
+        }
+
         let _ = tx.send(AudioEvent::VolumeChanged {
             volume: cached_volume,
             muted: cached_mute,
@@ -638,7 +649,13 @@ fn do_stream(
 
                     let _ = capture.ReleaseBuffer(num_frames);
 
-                    let vol = if cached_mute { 0.0f32 } else { cached_volume };
+                    let vol = if mute_local_output {
+                        1.0f32
+                    } else if cached_mute {
+                        0.0f32
+                    } else {
+                        cached_volume
+                    };
                     let byte_len = sample_count * 2;
                     pcm_buf.clear();
                     if pcm_buf.capacity() < byte_len {
@@ -698,6 +715,11 @@ fn do_stream(
 
         client.Stop()?;
         let _ = CloseHandle(event_handle);
+
+        // Restore original mute state when we muted the endpoint
+        if mute_local_output && !original_mute {
+            let _ = ep_vol.SetMute(BOOL::from(false), std::ptr::null());
+        }
     }
 
     let _ = tx.send(AudioEvent::StateChanged(StreamState::Disconnected));
@@ -714,6 +736,7 @@ fn do_stream(
     _target_rate: u32,
     _target_channels: u16,
     _process_id: Option<u32>,
+    _mute_local_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let _ = tx.send(AudioEvent::Log(
         "WASAPI only available on Windows".to_string(),

@@ -381,29 +381,42 @@ fn build_format_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Message
 }
 
 fn build_options_row(state: &AppState, mode: ThemeMode) -> Element<'_, Message> {
-    row![
-        checkbox("Auto-connect", state.auto_connect)
-            .on_toggle(Message::ToggleAutoConnect)
-            .size(14)
-            .spacing(5)
-            .text_size(11)
-            .style(iced::theme::Checkbox::Custom(Box::new(CheckStyle { mode }))),
-        Space::with_width(Length::Fill),
-        checkbox("Start with Windows", state.start_with_windows)
-            .on_toggle(Message::ToggleStartWithWindows)
-            .size(14)
-            .spacing(5)
-            .text_size(11)
-            .style(iced::theme::Checkbox::Custom(Box::new(CheckStyle { mode }))),
-        Space::with_width(Length::Fill),
-        checkbox("Minimize to tray", state.minimize_to_tray)
-            .on_toggle(Message::ToggleMinimizeToTray)
-            .size(14)
-            .spacing(5)
-            .text_size(11)
-            .style(iced::theme::Checkbox::Custom(Box::new(CheckStyle { mode }))),
+    column![
+        row![
+            checkbox("Auto-connect", state.auto_connect)
+                .on_toggle(Message::ToggleAutoConnect)
+                .size(14)
+                .spacing(5)
+                .text_size(11)
+                .style(iced::theme::Checkbox::Custom(Box::new(CheckStyle { mode }))),
+            Space::with_width(Length::Fill),
+            checkbox("Start with Windows", state.start_with_windows)
+                .on_toggle(Message::ToggleStartWithWindows)
+                .size(14)
+                .spacing(5)
+                .text_size(11)
+                .style(iced::theme::Checkbox::Custom(Box::new(CheckStyle { mode }))),
+            Space::with_width(Length::Fill),
+            checkbox("Minimize to tray", state.minimize_to_tray)
+                .on_toggle(Message::ToggleMinimizeToTray)
+                .size(14)
+                .spacing(5)
+                .text_size(11)
+                .style(iced::theme::Checkbox::Custom(Box::new(CheckStyle { mode }))),
+        ]
+        .align_items(Alignment::Center),
+        Space::with_height(6),
+        row![
+            checkbox("Mute local output", state.mute_local_output)
+                .on_toggle(Message::ToggleMuteLocalOutput)
+                .size(14)
+                .spacing(5)
+                .text_size(11)
+                .style(iced::theme::Checkbox::Custom(Box::new(CheckStyle { mode }))),
+        ]
+        .align_items(Alignment::Center),
     ]
-    .align_items(Alignment::Center)
+    .spacing(0)
     .into()
 }
 

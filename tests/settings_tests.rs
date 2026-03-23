@@ -11,6 +11,7 @@ fn default_settings_values() {
     assert!(!s.auto_connect);
     assert!(s.start_with_windows);
     assert!(s.minimize_to_tray);
+    assert!(!s.mute_local_output);
     assert!(s.dark_theme);
 }
 
@@ -25,6 +26,7 @@ fn settings_serialization_roundtrip() {
         auto_connect: true,
         start_with_windows: true,
         minimize_to_tray: false,
+        mute_local_output: true,
         dark_theme: false,
     };
 
@@ -39,6 +41,7 @@ fn settings_serialization_roundtrip() {
     assert!(restored.auto_connect);
     assert!(restored.start_with_windows);
     assert!(!restored.minimize_to_tray);
+    assert!(restored.mute_local_output);
     assert!(!restored.dark_theme);
 }
 
@@ -55,6 +58,7 @@ fn settings_deserialization_with_missing_fields() {
     assert!(!s.auto_connect);
     assert!(s.start_with_windows);
     assert!(s.minimize_to_tray);
+    assert!(!s.mute_local_output);
     assert!(s.dark_theme);
 }
 
@@ -70,6 +74,7 @@ fn settings_deserialization_empty_json() {
     assert_eq!(s.channels, d.channels);
     assert_eq!(s.start_with_windows, d.start_with_windows);
     assert_eq!(s.minimize_to_tray, d.minimize_to_tray);
+    assert_eq!(s.mute_local_output, d.mute_local_output);
     assert_eq!(s.dark_theme, d.dark_theme);
 }
 
@@ -113,6 +118,20 @@ fn settings_start_with_windows_defaults_true() {
     let json = "{}";
     let s: AppSettings = serde_json::from_str(json).unwrap();
     assert!(s.start_with_windows);
+}
+
+#[test]
+fn settings_mute_local_output_defaults_false() {
+    let json = "{}";
+    let s: AppSettings = serde_json::from_str(json).unwrap();
+    assert!(!s.mute_local_output);
+}
+
+#[test]
+fn settings_preserve_mute_local_output_true() {
+    let json = r#"{"mute_local_output": true}"#;
+    let s: AppSettings = serde_json::from_str(json).unwrap();
+    assert!(s.mute_local_output);
 }
 
 #[test]
