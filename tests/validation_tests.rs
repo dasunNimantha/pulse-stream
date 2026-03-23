@@ -15,6 +15,7 @@ fn default_state() -> AppState {
         auto_connect: false,
         start_with_windows: false,
         minimize_to_tray: true,
+        mute_local_output: false,
         volume_text: String::new(),
         show_quality_warning: false,
         stats_bitrate: String::new(),
