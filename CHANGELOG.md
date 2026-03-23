@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.3] - 2026-03-23
+
+### Added
+- **Mute local output** — silences laptop speakers while streaming; volume buttons still control stream level, endpoint is re-muted automatically
+- Receiver script now kills stale `ncat` processes between connection cycles
+- `ncat` idle timeout (`-i 30s`) to recover from dead connections (e.g. PC sleep/lock)
+
+### Changed
+- Minimize to tray is now always enabled (removed toggle from UI)
+- Removed external watchdog timer — receiver script handles recovery internally
+
+### Fixed
+- Volume buttons had no effect on stream when mute local output was enabled
+- Receiver watchdog was restarting the service during active streams due to stale FIN-WAIT-2 sockets
+
 ## [0.1.2] - 2026-03-17
 
 ### Fixed

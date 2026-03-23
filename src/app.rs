@@ -74,7 +74,7 @@ impl Application for PulseStreamApp {
             stream_state: StreamState::Disconnected,
             auto_connect: settings.auto_connect,
             start_with_windows: settings.start_with_windows,
-            minimize_to_tray: settings.minimize_to_tray,
+            minimize_to_tray: true,
             mute_local_output: settings.mute_local_output,
             volume_text: String::new(),
             show_quality_warning: false,
@@ -202,10 +202,7 @@ impl Application for PulseStreamApp {
                 toggle_startup_registry(v);
                 self.save_settings();
             }
-            Message::ToggleMinimizeToTray(v) => {
-                self.state.minimize_to_tray = v;
-                self.save_settings();
-            }
+            Message::ToggleMinimizeToTray(_) => {}
             Message::ToggleMuteLocalOutput(v) => {
                 self.state.mute_local_output = v;
                 self.save_settings();

@@ -650,7 +650,7 @@ fn do_stream(
                     let _ = capture.ReleaseBuffer(num_frames);
 
                     let vol = if mute_local_output {
-                        1.0f32
+                        cached_volume.max(0.01)
                     } else if cached_mute {
                         0.0f32
                     } else {
@@ -698,12 +698,18 @@ fn do_stream(
 
                 if let (Ok(v), Ok(m)) = (ep_vol.GetMasterVolumeLevelScalar(), ep_vol.GetMute()) {
                     let new_mute: bool = m.as_bool();
+
+                    // Re-mute if user's volume button unmuted the endpoint
+                    if mute_local_output && !new_mute {
+                        let _ = ep_vol.SetMute(BOOL::from(true), std::ptr::null());
+                    }
+
                     if (v - cached_volume).abs() > 0.001 || new_mute != cached_mute {
                         cached_volume = v;
                         cached_mute = new_mute;
                         let _ = tx.send(AudioEvent::VolumeChanged {
                             volume: v,
-                            muted: new_mute,
+                            muted: if mute_local_output { true } else { new_mute },
                         });
                     }
                 }
