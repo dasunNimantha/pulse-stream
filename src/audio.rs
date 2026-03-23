@@ -107,7 +107,16 @@ impl AudioStreamer {
             std::thread::Builder::new()
                 .name("pulse-stream-audio".to_string())
                 .spawn(move || {
-                    run_loop(&tx, &running, &server, port, rate, channels, process_id, mute_local_output);
+                    run_loop(
+                        &tx,
+                        &running,
+                        &server,
+                        port,
+                        rate,
+                        channels,
+                        process_id,
+                        mute_local_output,
+                    );
                 })
                 .expect("failed to spawn audio thread"),
         );
@@ -340,7 +349,16 @@ fn run_loop(
             server, port
         )));
 
-        match do_stream(tx, running, server, port, rate, channels, process_id, mute_local_output) {
+        match do_stream(
+            tx,
+            running,
+            server,
+            port,
+            rate,
+            channels,
+            process_id,
+            mute_local_output,
+        ) {
             Ok(()) => {}
             Err(e) => {
                 if !running.load(Ordering::Relaxed) {

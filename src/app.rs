@@ -158,8 +158,15 @@ impl Application for PulseStreamApp {
                 });
 
                 self.save_settings();
-                self.streamer
-                    .start(server, port, rate, channels, device_id, process_id, self.state.mute_local_output);
+                self.streamer.start(
+                    server,
+                    port,
+                    rate,
+                    channels,
+                    device_id,
+                    process_id,
+                    self.state.mute_local_output,
+                );
             }
 
             Message::Disconnect => {
