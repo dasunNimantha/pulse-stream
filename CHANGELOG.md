@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.5] - 2026-04-12
+
+### Fixed
+- **WASAPI GetBuffer/ReleaseBuffer misuse** — no longer calls `ReleaseBuffer` when `GetBuffer` fails, preventing potential undefined behavior
+- **Drop counter always zero** — `Stats.drops` now tracks actual channel send failures instead of being hardcoded to zero
+- **Device selection not persisted** — changing the audio device now saves to `settings.json` immediately
+
+### Added
+- **Audio device hot-plug detection** — device list refreshes every 3 seconds so newly plugged speakers/headphones appear without restart
+- **Release profile optimizations** — LTO, symbol stripping, single codegen unit for smaller and faster binaries
+- **179 tests** — comprehensive coverage for app state transitions, message handling, settings I/O, audio events, validation edge cases, and theme widget styles (up from 76)
+
+### Changed
+- Reduced hot-path allocations in capture loop using `Arc<[u8]>` instead of `Vec::clone()`
+- Upgraded `AtomicBool` ordering from `Relaxed` to `Acquire`/`Release` for correct cross-thread visibility
+- Trimmed tokio features from `full` to only `rt-multi-thread`, `macros`, `time`, `net`
+- Removed dead `ToggleMinimizeToTray` message variant
+
 ## [0.1.4] - 2026-04-12
 
 ### Added
