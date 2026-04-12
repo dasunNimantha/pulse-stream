@@ -152,7 +152,15 @@ fn streamer_start_sets_running() {
     let mut streamer = AudioStreamer::new();
     let _rx = streamer.event_receiver();
 
-    streamer.start("127.0.0.1".to_string(), 4714, 48000, 2, None, None, false);
+    streamer.start(pulse_stream::audio::StreamConfig {
+        server: "127.0.0.1".to_string(),
+        port: 4714,
+        rate: 48000,
+        channels: 2,
+        device_id: None,
+        process_id: None,
+        mute_local_output: false,
+    });
     assert!(streamer.is_running());
 
     streamer.stop();
@@ -164,15 +172,15 @@ fn streamer_emits_events_on_connection_failure() {
     let mut streamer = AudioStreamer::new();
     let rx = streamer.event_receiver();
 
-    streamer.start(
-        "127.0.0.1".to_string(),
-        1, // unlikely port
-        48000,
-        2,
-        None,
-        None,
-        false,
-    );
+    streamer.start(pulse_stream::audio::StreamConfig {
+        server: "127.0.0.1".to_string(),
+        port: 1,
+        rate: 48000,
+        channels: 2,
+        device_id: None,
+        process_id: None,
+        mute_local_output: false,
+    });
 
     std::thread::sleep(Duration::from_millis(500));
     streamer.stop();
@@ -204,10 +212,26 @@ fn streamer_ignores_double_start() {
     let mut streamer = AudioStreamer::new();
     let _rx = streamer.event_receiver();
 
-    streamer.start("127.0.0.1".to_string(), 1, 48000, 2, None, None, false);
+    streamer.start(pulse_stream::audio::StreamConfig {
+        server: "127.0.0.1".to_string(),
+        port: 1,
+        rate: 48000,
+        channels: 2,
+        device_id: None,
+        process_id: None,
+        mute_local_output: false,
+    });
     assert!(streamer.is_running());
 
-    streamer.start("127.0.0.1".to_string(), 2, 48000, 2, None, None, false);
+    streamer.start(pulse_stream::audio::StreamConfig {
+        server: "127.0.0.1".to_string(),
+        port: 2,
+        rate: 48000,
+        channels: 2,
+        device_id: None,
+        process_id: None,
+        mute_local_output: false,
+    });
     assert!(streamer.is_running());
 
     streamer.stop();

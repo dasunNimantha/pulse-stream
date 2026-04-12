@@ -59,6 +59,16 @@ pub enum AudioEvent {
     VolumeChanged { volume: f32, muted: bool },
 }
 
+pub struct StreamConfig {
+    pub server: String,
+    pub port: u16,
+    pub rate: u32,
+    pub channels: u16,
+    pub device_id: Option<String>,
+    pub process_id: Option<u32>,
+    pub mute_local_output: bool,
+}
+
 pub struct AudioStreamer {
     event_tx: flume::Sender<AudioEvent>,
     event_rx: flume::Receiver<AudioEvent>,
@@ -85,16 +95,7 @@ impl AudioStreamer {
         self.running.load(Ordering::Relaxed)
     }
 
-    pub fn start(
-        &mut self,
-        server: String,
-        port: u16,
-        rate: u32,
-        channels: u16,
-        _device_id: Option<String>,
-        process_id: Option<u32>,
-        mute_local_output: bool,
-    ) {
+    pub fn start(&mut self, cfg: StreamConfig) {
         if self.running.load(Ordering::Relaxed) {
             return;
         }
@@ -107,16 +108,7 @@ impl AudioStreamer {
             std::thread::Builder::new()
                 .name("pulse-stream-audio".to_string())
                 .spawn(move || {
-                    run_loop(
-                        &tx,
-                        &running,
-                        &server,
-                        port,
-                        rate,
-                        channels,
-                        process_id,
-                        mute_local_output,
-                    );
+                    run_loop(&tx, &running, &cfg);
                 })
                 .expect("failed to spawn audio thread"),
         );
@@ -332,33 +324,15 @@ fn get_process_name(pid: u32) -> Option<String> {
     }
 }
 
-fn run_loop(
-    tx: &flume::Sender<AudioEvent>,
-    running: &Arc<AtomicBool>,
-    server: &str,
-    port: u16,
-    rate: u32,
-    channels: u16,
-    process_id: Option<u32>,
-    mute_local_output: bool,
-) {
+fn run_loop(tx: &flume::Sender<AudioEvent>, running: &Arc<AtomicBool>, cfg: &StreamConfig) {
     while running.load(Ordering::Relaxed) {
         let _ = tx.send(AudioEvent::StateChanged(StreamState::Connecting));
         let _ = tx.send(AudioEvent::Log(format!(
             "Connecting to {}:{}...",
-            server, port
+            cfg.server, cfg.port
         )));
 
-        match do_stream(
-            tx,
-            running,
-            server,
-            port,
-            rate,
-            channels,
-            process_id,
-            mute_local_output,
-        ) {
+        match do_stream(tx, running, cfg) {
             Ok(()) => {}
             Err(e) => {
                 if !running.load(Ordering::Relaxed) {
@@ -474,18 +448,16 @@ unsafe fn activate_process_loopback(pid: u32) -> Result<IAudioClient, Box<dyn st
 fn do_stream(
     tx: &flume::Sender<AudioEvent>,
     running: &Arc<AtomicBool>,
-    server: &str,
-    port: u16,
-    _target_rate: u32,
-    _target_channels: u16,
-    process_id: Option<u32>,
-    mute_local_output: bool,
+    cfg: &StreamConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let tcp = TcpStream::connect(format!("{}:{}", server, port))?;
+    let mute_local_output = cfg.mute_local_output;
+    let process_id = cfg.process_id;
+    let tcp = TcpStream::connect(format!("{}:{}", cfg.server, cfg.port))?;
     tcp.set_nodelay(true)?;
     tcp.set_write_timeout(Some(Duration::from_secs(3)))?;
     // Send buffer: enough to absorb brief TCP delays without dropping chunks
     set_send_buffer(&tcp, 8192);
+    set_tcp_keepalive(&tcp);
 
     // Writer thread: capture never blocks on TCP; when dialog opens and write blocks, we drop chunks instead of stalling
     let (tx_chunk, rx_chunk) = flume::bounded::<Vec<u8>>(16);
@@ -499,7 +471,12 @@ fn do_stream(
     });
 
     let _ = tx.send(AudioEvent::StateChanged(StreamState::Connected));
-    let _ = tx.send(AudioEvent::Log(format!("Connected to {}:{}", server, port)));
+    let _ = tx.send(AudioEvent::Log(format!(
+        "Connected to {}:{}",
+        cfg.server, cfg.port
+    )));
+
+    let mut connection_lost = false;
 
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -632,6 +609,12 @@ fn do_stream(
         let silence_chunk: Vec<u8> = vec![0u8; silence_10ms_len];
 
         while running.load(Ordering::Relaxed) {
+            // Writer thread exits when TCP fails; capture must stop so run_loop can reconnect.
+            if writer_handle.is_finished() {
+                connection_lost = true;
+                break;
+            }
+
             let wait_result = WaitForSingleObject(event_handle, 100);
             if wait_result != WAIT_OBJECT_0 {
                 // WASAPI didn't signal (e.g. Save dialog); inject silence so the stream keeps moving
@@ -639,6 +622,11 @@ fn do_stream(
             }
             if wait_result == WAIT_OBJECT_0 {
                 loop {
+                    if writer_handle.is_finished() {
+                        connection_lost = true;
+                        break;
+                    }
+
                     let mut buffer_ptr = std::ptr::null_mut();
                     let mut num_frames = 0u32;
                     let mut flags = 0u32;
@@ -696,6 +684,9 @@ fn do_stream(
                     let chunk_latency = capture_buffer_ms + send_elapsed_ms;
                     avg_latency_ms = avg_latency_ms * 0.8 + chunk_latency * 0.2;
                 }
+                if connection_lost {
+                    break;
+                }
             }
 
             // Stats + volume poll (runs every iteration, even during silence)
@@ -746,6 +737,11 @@ fn do_stream(
         }
     }
 
+    if connection_lost {
+        // run_loop logs the error and emits Disconnected + reconnect delay
+        return Err("connection lost".into());
+    }
+
     let _ = tx.send(AudioEvent::StateChanged(StreamState::Disconnected));
     let _ = tx.send(AudioEvent::Log("Disconnected".to_string()));
     Ok(())
@@ -755,12 +751,7 @@ fn do_stream(
 fn do_stream(
     tx: &flume::Sender<AudioEvent>,
     _running: &Arc<AtomicBool>,
-    _server: &str,
-    _port: u16,
-    _target_rate: u32,
-    _target_channels: u16,
-    _process_id: Option<u32>,
-    _mute_local_output: bool,
+    _cfg: &StreamConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let _ = tx.send(AudioEvent::Log(
         "WASAPI only available on Windows".to_string(),
@@ -789,3 +780,27 @@ fn set_send_buffer(tcp: &TcpStream, size: u32) {
 
 #[cfg(not(windows))]
 fn set_send_buffer(_tcp: &TcpStream, _size: u32) {}
+
+/// Enable TCP keepalive so the stack probes dead peers (router/NAT drops) instead of hanging forever.
+#[cfg(windows)]
+fn set_tcp_keepalive(tcp: &TcpStream) {
+    use std::os::windows::io::AsRawSocket;
+    extern "system" {
+        fn setsockopt(s: usize, level: i32, optname: i32, optval: *const u8, optlen: i32) -> i32;
+    }
+    const SO_KEEPALIVE: i32 = 0x0008;
+    let raw = tcp.as_raw_socket();
+    let on: u32 = 1;
+    unsafe {
+        setsockopt(
+            raw as usize,
+            0xFFFF,
+            SO_KEEPALIVE,
+            &on as *const u32 as *const u8,
+            4,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn set_tcp_keepalive(_tcp: &TcpStream) {}

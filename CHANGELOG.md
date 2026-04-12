@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.4] - 2026-04-12
+
+### Added
+- **Auto-reconnect on connection loss** — detects when the TCP writer thread dies (router failure, power loss, receiver down) and automatically reconnects instead of silently dropping audio
+- **TCP keepalive** — enables `SO_KEEPALIVE` on the streaming socket so the OS probes half-open connections and surfaces dead peers faster
+
+### Changed
+- Refactored streaming parameters into `StreamConfig` struct to satisfy clippy `too_many_arguments` lint
+
 ## [0.1.3] - 2026-03-23
 
 ### Added
