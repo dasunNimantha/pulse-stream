@@ -94,14 +94,14 @@ impl AudioStreamer {
     }
 
     pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::Relaxed)
+        self.running.load(Ordering::Acquire)
     }
 
     pub fn start(&mut self, cfg: StreamConfig) {
-        if self.running.load(Ordering::Relaxed) {
+        if self.running.load(Ordering::Acquire) {
             return;
         }
-        self.running.store(true, Ordering::Relaxed);
+        self.running.store(true, Ordering::Release);
 
         let tx = self.event_tx.clone();
         let running = self.running.clone();
@@ -117,7 +117,7 @@ impl AudioStreamer {
     }
 
     pub fn stop(&mut self) {
-        self.running.store(false, Ordering::Relaxed);
+        self.running.store(false, Ordering::Release);
         if let Some(handle) = self.thread.take() {
             let _ = handle.join();
         }
@@ -327,7 +327,7 @@ fn get_process_name(pid: u32) -> Option<String> {
 }
 
 fn run_loop(tx: &flume::Sender<AudioEvent>, running: &Arc<AtomicBool>, cfg: &StreamConfig) {
-    while running.load(Ordering::Relaxed) {
+    while running.load(Ordering::Acquire) {
         let _ = tx.send(AudioEvent::StateChanged(StreamState::Connecting));
         let _ = tx.send(AudioEvent::Log(format!(
             "Connecting to {}:{}...",
@@ -337,7 +337,7 @@ fn run_loop(tx: &flume::Sender<AudioEvent>, running: &Arc<AtomicBool>, cfg: &Str
         match do_stream(tx, running, cfg) {
             Ok(()) => {}
             Err(e) => {
-                if !running.load(Ordering::Relaxed) {
+                if !running.load(Ordering::Acquire) {
                     break;
                 }
                 let _ = tx.send(AudioEvent::Log(format!("Error: {}", e)));
@@ -345,7 +345,7 @@ fn run_loop(tx: &flume::Sender<AudioEvent>, running: &Arc<AtomicBool>, cfg: &Str
                 let _ = tx.send(AudioEvent::Log("Reconnecting in 3s...".to_string()));
 
                 for _ in 0..30 {
-                    if !running.load(Ordering::Relaxed) {
+                    if !running.load(Ordering::Acquire) {
                         return;
                     }
                     std::thread::sleep(Duration::from_millis(100));
@@ -509,11 +509,11 @@ fn do_stream(
     set_tcp_keepalive(&tcp);
 
     // Writer thread: capture never blocks on TCP; when dialog opens and write blocks, we drop chunks instead of stalling
-    let (tx_chunk, rx_chunk) = flume::bounded::<Vec<u8>>(16);
+    let (tx_chunk, rx_chunk) = flume::bounded::<Arc<[u8]>>(16);
     let writer_handle = std::thread::spawn(move || {
         let mut stream = tcp;
-        while let Ok(buf) = rx_chunk.recv() {
-            if stream.write_all(&buf).is_err() {
+        while let Ok(ref buf) = rx_chunk.recv() {
+            if stream.write_all(buf).is_err() {
                 break;
             }
         }
@@ -653,6 +653,7 @@ fn do_stream(
         let mut prev_bytes: u64 = 0;
         let mut prev_time = Instant::now();
         let mut avg_latency_ms: f64 = 0.0;
+        let mut drop_count: u32 = 0;
         let capture_buffer_ms: f64 = buffer_duration as f64 / 10_000.0;
 
         let src_channels = src_ch_val as usize;
@@ -661,11 +662,10 @@ fn do_stream(
         let mut float_buf: Vec<f32> = Vec::with_capacity(src_rate_val as usize / 25 * src_channels);
         let mut pcm_buf: Vec<u8> = Vec::with_capacity(float_buf.capacity() * 2);
 
-        // 10ms silence for timeout injection: when WASAPI doesn't signal (e.g. Save dialog), send silence so receiver doesn't freeze
         let silence_10ms_len = (src_rate_val as usize * src_channels * 2) / 100;
-        let silence_chunk: Vec<u8> = vec![0u8; silence_10ms_len];
+        let silence_chunk: Arc<[u8]> = vec![0u8; silence_10ms_len].into();
 
-        while running.load(Ordering::Relaxed) {
+        while running.load(Ordering::Acquire) {
             // Writer thread exits when TCP fails; capture must stop so run_loop can reconnect.
             if writer_handle.is_finished() {
                 connection_lost = true;
@@ -674,8 +674,7 @@ fn do_stream(
 
             let wait_result = WaitForSingleObject(event_handle, 100);
             if wait_result != WAIT_OBJECT_0 {
-                // WASAPI didn't signal (e.g. Save dialog); inject silence so the stream keeps moving
-                let _ = tx_chunk.try_send(silence_chunk.clone());
+                let _ = tx_chunk.try_send(Arc::clone(&silence_chunk));
             }
             if wait_result == WAIT_OBJECT_0 {
                 loop {
@@ -692,7 +691,6 @@ fn do_stream(
                         capture.GetBuffer(&mut buffer_ptr, &mut num_frames, &mut flags, None, None);
 
                     if hr.is_err() || num_frames == 0 {
-                        let _ = capture.ReleaseBuffer(0);
                         break;
                     }
 
@@ -736,8 +734,11 @@ fn do_stream(
                         *out = ((s * vol).clamp(-1.0, 1.0) * 32767.0) as i16;
                     }
 
-                    if tx_chunk.try_send(pcm_buf.clone()).is_ok() {
+                    let chunk: Arc<[u8]> = pcm_buf.clone().into();
+                    if tx_chunk.try_send(chunk).is_ok() {
                         total_bytes += pcm_buf.len() as u64;
+                    } else {
+                        drop_count += 1;
                     }
 
                     let send_elapsed_ms = capture_instant.elapsed().as_secs_f64() * 1000.0;
@@ -758,7 +759,7 @@ fn do_stream(
                     bitrate_kbps: kbps,
                     uptime: start.elapsed(),
                     client_latency_ms: avg_latency_ms,
-                    drops: 0,
+                    drops: drop_count,
                     capture_format: format_str.clone(),
                 }));
                 prev_bytes = total_bytes;

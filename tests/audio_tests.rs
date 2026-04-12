@@ -1,4 +1,6 @@
-use pulse_stream::audio::{AudioStreamer, DeviceInfo, ProcessInfo, Stats, StreamState};
+use pulse_stream::audio::{
+    AudioEvent, AudioStreamer, DeviceInfo, ProcessInfo, Stats, StreamConfig, StreamState,
+};
 use std::time::Duration;
 
 // ==================== Data structures ====================
@@ -250,6 +252,170 @@ fn get_output_devices_always_has_default() {
 #[test]
 fn get_audio_processes_returns_vec() {
     let processes = pulse_stream::audio::get_audio_processes();
-    // On CI or headless, this may be empty — just confirm it doesn't crash
     let _ = processes.len();
+}
+
+// ==================== StreamConfig ====================
+
+#[test]
+fn stream_config_construction() {
+    let cfg = StreamConfig {
+        server: "10.0.0.1".to_string(),
+        port: 5000,
+        rate: 96000,
+        channels: 6,
+        device_id: Some("dev-1".to_string()),
+        process_id: Some(1234),
+        mute_local_output: true,
+    };
+    assert_eq!(cfg.server, "10.0.0.1");
+    assert_eq!(cfg.port, 5000);
+    assert_eq!(cfg.rate, 96000);
+    assert_eq!(cfg.channels, 6);
+    assert_eq!(cfg.device_id, Some("dev-1".to_string()));
+    assert_eq!(cfg.process_id, Some(1234));
+    assert!(cfg.mute_local_output);
+}
+
+#[test]
+fn stream_config_none_fields() {
+    let cfg = StreamConfig {
+        server: "127.0.0.1".to_string(),
+        port: 4714,
+        rate: 48000,
+        channels: 2,
+        device_id: None,
+        process_id: None,
+        mute_local_output: false,
+    };
+    assert!(cfg.device_id.is_none());
+    assert!(cfg.process_id.is_none());
+    assert!(!cfg.mute_local_output);
+}
+
+// ==================== AudioEvent variants ====================
+
+#[test]
+fn audio_event_state_changed_clone() {
+    let event = AudioEvent::StateChanged(StreamState::Streaming);
+    let cloned = event.clone();
+    assert!(matches!(
+        cloned,
+        AudioEvent::StateChanged(StreamState::Streaming)
+    ));
+}
+
+#[test]
+fn audio_event_log_clone() {
+    let event = AudioEvent::Log("test message".to_string());
+    let cloned = event.clone();
+    if let AudioEvent::Log(msg) = cloned {
+        assert_eq!(msg, "test message");
+    } else {
+        panic!("expected Log variant");
+    }
+}
+
+#[test]
+fn audio_event_stats_updated_clone() {
+    let event = AudioEvent::StatsUpdated(Stats {
+        bytes_sent: 1024,
+        bitrate_kbps: 256.0,
+        uptime: Duration::from_secs(10),
+        client_latency_ms: 5.0,
+        drops: 1,
+        capture_format: "48.0kHz 2ch 16bit".to_string(),
+    });
+    let cloned = event.clone();
+    if let AudioEvent::StatsUpdated(s) = cloned {
+        assert_eq!(s.bytes_sent, 1024);
+        assert_eq!(s.drops, 1);
+    } else {
+        panic!("expected StatsUpdated variant");
+    }
+}
+
+#[test]
+fn audio_event_volume_changed_clone() {
+    let event = AudioEvent::VolumeChanged {
+        volume: 0.75,
+        muted: false,
+    };
+    let cloned = event.clone();
+    if let AudioEvent::VolumeChanged { volume, muted } = cloned {
+        assert!((volume - 0.75).abs() < f32::EPSILON);
+        assert!(!muted);
+    } else {
+        panic!("expected VolumeChanged variant");
+    }
+}
+
+#[test]
+fn audio_event_debug_format() {
+    let event = AudioEvent::Log("hello".to_string());
+    let dbg = format!("{:?}", event);
+    assert!(dbg.contains("Log"));
+    assert!(dbg.contains("hello"));
+}
+
+// ==================== AudioStreamer::default ====================
+
+#[test]
+fn streamer_default_equivalent_to_new() {
+    let a = AudioStreamer::new();
+    let b = AudioStreamer::default();
+    assert!(!a.is_running());
+    assert!(!b.is_running());
+}
+
+// ==================== Connection failure event order ====================
+
+#[test]
+fn streamer_connection_failure_emits_events_in_order() {
+    let mut streamer = AudioStreamer::new();
+    let rx = streamer.event_receiver();
+
+    streamer.start(StreamConfig {
+        server: "127.0.0.1".to_string(),
+        port: 1,
+        rate: 48000,
+        channels: 2,
+        device_id: None,
+        process_id: None,
+        mute_local_output: false,
+    });
+
+    std::thread::sleep(Duration::from_millis(500));
+    streamer.stop();
+
+    let mut events = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        events.push(event);
+    }
+
+    let mut saw_connecting = false;
+    let mut saw_log_after_connecting = false;
+    let mut saw_disconnected_after_log = false;
+
+    for event in &events {
+        match event {
+            AudioEvent::StateChanged(StreamState::Connecting) => {
+                saw_connecting = true;
+            }
+            AudioEvent::Log(_) if saw_connecting => {
+                saw_log_after_connecting = true;
+            }
+            AudioEvent::StateChanged(StreamState::Disconnected) if saw_log_after_connecting => {
+                saw_disconnected_after_log = true;
+            }
+            _ => {}
+        }
+    }
+
+    assert!(saw_connecting, "should emit Connecting first");
+    assert!(saw_log_after_connecting, "should emit Log after Connecting");
+    assert!(
+        saw_disconnected_after_log,
+        "should emit Disconnected after Log"
+    );
 }

@@ -1,4 +1,10 @@
-use pulse_stream::theme::{get_colors, pulse_theme, ThemeMode};
+use iced::widget::button::StyleSheet as ButtonStyleSheet;
+use iced::widget::container::StyleSheet as ContainerStyleSheet;
+use iced::widget::text_input::StyleSheet as TextInputStyleSheet;
+use iced::Color;
+use pulse_stream::theme::{
+    get_colors, pulse_theme, CardStyle, InputStyle, PanelStyle, PrimaryButtonStyle, ThemeMode,
+};
 
 // ==================== ColorScheme properties ====================
 
@@ -171,4 +177,171 @@ fn theme_mode_copy() {
     let a = ThemeMode::Dark;
     let b = a;
     assert_eq!(a, b);
+}
+
+// ==================== Widget style tests ====================
+
+#[test]
+fn card_style_produces_non_default_appearance() {
+    let style = CardStyle {
+        mode: ThemeMode::Dark,
+    };
+    let theme = pulse_theme(ThemeMode::Dark);
+    let appearance = style.appearance(&theme);
+    assert!(appearance.text_color.is_some());
+    assert!(appearance.background.is_some());
+    assert!(appearance.border.width > 0.0);
+}
+
+#[test]
+fn panel_style_produces_non_default_appearance() {
+    let style = PanelStyle {
+        mode: ThemeMode::Dark,
+    };
+    let theme = pulse_theme(ThemeMode::Dark);
+    let appearance = style.appearance(&theme);
+    assert!(appearance.text_color.is_some());
+    assert!(appearance.background.is_some());
+    assert!(appearance.border.width > 0.0);
+}
+
+#[test]
+fn primary_button_active_has_accent_bg() {
+    let style = PrimaryButtonStyle {
+        mode: ThemeMode::Dark,
+    };
+    let theme = pulse_theme(ThemeMode::Dark);
+    let appearance = style.active(&theme);
+    assert!(appearance.background.is_some());
+    let colors = get_colors(ThemeMode::Dark);
+    if let Some(iced::Background::Color(c)) = appearance.background {
+        assert!((c.r - colors.accent.r).abs() < 0.01);
+    }
+}
+
+#[test]
+fn primary_button_hovered_differs_from_active() {
+    let style = PrimaryButtonStyle {
+        mode: ThemeMode::Dark,
+    };
+    let theme = pulse_theme(ThemeMode::Dark);
+    let active = style.active(&theme);
+    let hovered = style.hovered(&theme);
+    let active_bg = match active.background {
+        Some(iced::Background::Color(c)) => c,
+        _ => Color::TRANSPARENT,
+    };
+    let hovered_bg = match hovered.background {
+        Some(iced::Background::Color(c)) => c,
+        _ => Color::TRANSPARENT,
+    };
+    assert!(
+        (active_bg.r - hovered_bg.r).abs() > 0.01
+            || (active_bg.g - hovered_bg.g).abs() > 0.01
+            || (active_bg.b - hovered_bg.b).abs() > 0.01,
+        "hover should differ from active"
+    );
+}
+
+#[test]
+fn primary_button_disabled_uses_muted_colors() {
+    let style = PrimaryButtonStyle {
+        mode: ThemeMode::Dark,
+    };
+    let theme = pulse_theme(ThemeMode::Dark);
+    let disabled = style.disabled(&theme);
+    let colors = get_colors(ThemeMode::Dark);
+    assert_eq!(disabled.text_color.r, colors.text_disabled.r);
+}
+
+#[test]
+fn input_style_normal_border() {
+    let style = InputStyle {
+        mode: ThemeMode::Dark,
+        error: false,
+    };
+    let theme = pulse_theme(ThemeMode::Dark);
+    let appearance = style.active(&theme);
+    let colors = get_colors(ThemeMode::Dark);
+    assert!((appearance.border.color.r - colors.border.r).abs() < 0.01);
+}
+
+#[test]
+fn input_style_error_changes_border() {
+    let normal = InputStyle {
+        mode: ThemeMode::Dark,
+        error: false,
+    };
+    let error = InputStyle {
+        mode: ThemeMode::Dark,
+        error: true,
+    };
+    let theme = pulse_theme(ThemeMode::Dark);
+    let normal_app = normal.active(&theme);
+    let error_app = error.active(&theme);
+    assert!(
+        (normal_app.border.color.r - error_app.border.color.r).abs() > 0.1,
+        "error border should differ from normal"
+    );
+    assert!(error_app.border.width > normal_app.border.width);
+}
+
+#[test]
+fn input_style_focused_error_uses_red() {
+    let style = InputStyle {
+        mode: ThemeMode::Dark,
+        error: true,
+    };
+    let theme = pulse_theme(ThemeMode::Dark);
+    let focused = style.focused(&theme);
+    let colors = get_colors(ThemeMode::Dark);
+    assert!((focused.border.color.r - colors.red.r).abs() < 0.01);
+}
+
+#[test]
+fn dark_vs_light_button_styles_distinct() {
+    let dark = PrimaryButtonStyle {
+        mode: ThemeMode::Dark,
+    };
+    let light = PrimaryButtonStyle {
+        mode: ThemeMode::Light,
+    };
+    let dark_theme = pulse_theme(ThemeMode::Dark);
+    let light_theme = pulse_theme(ThemeMode::Light);
+    let dark_app = dark.active(&dark_theme);
+    let light_app = light.active(&light_theme);
+    let dark_text = dark_app.text_color;
+    let light_text = light_app.text_color;
+    assert!(
+        (dark_text.r - light_text.r).abs() > 0.3,
+        "dark/light text colors should differ"
+    );
+}
+
+#[test]
+fn dark_vs_light_input_styles_distinct() {
+    let dark = InputStyle {
+        mode: ThemeMode::Dark,
+        error: false,
+    };
+    let light = InputStyle {
+        mode: ThemeMode::Light,
+        error: false,
+    };
+    let dark_theme = pulse_theme(ThemeMode::Dark);
+    let light_theme = pulse_theme(ThemeMode::Light);
+    let dark_app = dark.active(&dark_theme);
+    let light_app = light.active(&light_theme);
+    let dark_bg = match dark_app.background {
+        iced::Background::Color(c) => c,
+        _ => Color::TRANSPARENT,
+    };
+    let light_bg = match light_app.background {
+        iced::Background::Color(c) => c,
+        _ => Color::TRANSPARENT,
+    };
+    assert!(
+        (dark_bg.r - light_bg.r).abs() > 0.3,
+        "dark/light input bg should differ"
+    );
 }

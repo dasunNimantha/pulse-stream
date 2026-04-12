@@ -1,4 +1,5 @@
 use pulse_stream::settings::AppSettings;
+use std::fs;
 
 #[test]
 fn default_settings_values() {
@@ -141,4 +142,92 @@ fn settings_pretty_json_is_valid() {
     let restored: AppSettings = serde_json::from_str(&json).unwrap();
     assert_eq!(restored.port, s.port);
     assert_eq!(restored.rate, s.rate);
+}
+
+// ==================== Disk I/O round-trip tests ====================
+
+#[test]
+fn settings_save_load_roundtrip_on_disk() {
+    let dir = std::env::temp_dir().join("pulse_stream_test_roundtrip");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    let original = AppSettings {
+        server: "10.0.0.5".to_string(),
+        port: 5000,
+        rate: 96000,
+        channels: 6,
+        device_id: Some("device-xyz".to_string()),
+        auto_connect: true,
+        start_with_windows: false,
+        minimize_to_tray: false,
+        mute_local_output: true,
+        dark_theme: false,
+    };
+
+    let path = dir.join("settings.json");
+    let json = serde_json::to_string_pretty(&original).unwrap();
+    fs::write(&path, &json).unwrap();
+
+    let contents = fs::read_to_string(&path).unwrap();
+    let loaded: AppSettings = serde_json::from_str(&contents).unwrap();
+
+    assert_eq!(loaded.server, "10.0.0.5");
+    assert_eq!(loaded.port, 5000);
+    assert_eq!(loaded.rate, 96000);
+    assert_eq!(loaded.channels, 6);
+    assert_eq!(loaded.device_id, Some("device-xyz".to_string()));
+    assert!(loaded.auto_connect);
+    assert!(!loaded.start_with_windows);
+    assert!(!loaded.minimize_to_tray);
+    assert!(loaded.mute_local_output);
+    assert!(!loaded.dark_theme);
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn settings_corrupt_json_falls_back_to_defaults() {
+    let corrupt = "{ this is not valid json }}}";
+    let result: Result<AppSettings, _> = serde_json::from_str(corrupt);
+    let settings = result.unwrap_or_default();
+
+    assert!(settings.server.is_empty());
+    assert_eq!(settings.port, 4714);
+    assert_eq!(settings.rate, 48000);
+}
+
+#[test]
+fn settings_empty_file_falls_back_to_defaults() {
+    let result: Result<AppSettings, _> = serde_json::from_str("");
+    let settings = result.unwrap_or_default();
+    assert_eq!(settings.port, 4714);
+}
+
+#[test]
+fn settings_partial_json_preserves_unknown_fields() {
+    let json = r#"{
+        "server": "10.0.0.1",
+        "port": 4714,
+        "future_feature": true,
+        "nested": {"key": "value"}
+    }"#;
+    let result: Result<AppSettings, _> = serde_json::from_str(json);
+    assert!(result.is_ok());
+    let s = result.unwrap();
+    assert_eq!(s.server, "10.0.0.1");
+    assert_eq!(s.rate, 48000);
+}
+
+#[test]
+fn settings_missing_directory_handled() {
+    let nonexistent = std::env::temp_dir().join("pulse_stream_nonexistent_dir_xyz");
+    let path = nonexistent.join("settings.json");
+    let contents = fs::read_to_string(&path);
+    assert!(contents.is_err());
+    let settings: AppSettings = contents
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    assert_eq!(settings.port, 4714);
 }

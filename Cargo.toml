@@ -8,7 +8,7 @@ build = "build.rs"
 [dependencies]
 iced = { version = "0.12", features = ["tokio"] }
 iced_aw = { version = "0.9", default-features = false, features = ["icons"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 directories = "5"
@@ -29,6 +29,11 @@ windows = { version = "0.58", features = [
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_System_Variant",
 ] }
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
 
 [build-dependencies]
 winresource = "0.1"

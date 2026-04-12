@@ -13,7 +13,6 @@ pub enum Message {
 
     ToggleAutoConnect(bool),
     ToggleStartWithWindows(bool),
-    ToggleMinimizeToTray(bool),
     ToggleMuteLocalOutput(bool),
 
     ToggleTheme,

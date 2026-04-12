@@ -233,3 +233,112 @@ fn all_fields_multiple_invalid() {
     state.port = "abc".to_string();
     assert!(!all_fields_valid(&state));
 }
+
+// ==================== Whitespace-only inputs ====================
+
+#[test]
+fn whitespace_only_server() {
+    assert!(!is_valid_server("   "));
+    assert!(!is_valid_server("\t"));
+    assert!(!is_valid_server(" \n "));
+}
+
+#[test]
+fn whitespace_only_port() {
+    assert!(!is_valid_port("   "));
+    assert!(!is_valid_port("\t"));
+}
+
+#[test]
+fn whitespace_only_rate() {
+    assert!(!is_valid_rate("   "));
+    assert!(!is_valid_rate("\t"));
+}
+
+#[test]
+fn whitespace_only_channels() {
+    assert!(!is_valid_channels("   "));
+    assert!(!is_valid_channels("\t"));
+}
+
+// ==================== Boundary values ====================
+
+#[test]
+fn port_boundary_max() {
+    assert!(is_valid_port("65535"));
+}
+
+#[test]
+fn port_boundary_one_over_max() {
+    assert!(!is_valid_port("65536"));
+}
+
+#[test]
+fn rate_boundary_min() {
+    assert!(is_valid_rate("1000"));
+}
+
+#[test]
+fn rate_boundary_one_below_min() {
+    assert!(!is_valid_rate("999"));
+}
+
+#[test]
+fn rate_boundary_max() {
+    assert!(is_valid_rate("384000"));
+}
+
+#[test]
+fn rate_boundary_one_over_max() {
+    assert!(!is_valid_rate("384001"));
+}
+
+#[test]
+fn channels_boundary_max() {
+    assert!(is_valid_channels("8"));
+}
+
+#[test]
+fn channels_boundary_one_over_max() {
+    assert!(!is_valid_channels("9"));
+}
+
+#[test]
+fn channels_boundary_min() {
+    assert!(is_valid_channels("1"));
+}
+
+// ==================== all_fields_valid edge cases ====================
+
+#[test]
+fn all_fields_valid_empty_server_other_valid() {
+    let mut state = default_state();
+    state.server = "".to_string();
+    assert!(!all_fields_valid(&state));
+}
+
+#[test]
+fn all_fields_valid_whitespace_server_other_valid() {
+    let mut state = default_state();
+    state.server = "   ".to_string();
+    assert!(!all_fields_valid(&state));
+}
+
+// ==================== Special characters ====================
+
+#[test]
+fn server_with_special_chars() {
+    assert!(!is_valid_server("192.168.1.1;"));
+    assert!(!is_valid_server("192.168.1.1:80"));
+    assert!(!is_valid_server("192.168.1.1/24"));
+}
+
+#[test]
+fn port_with_leading_zeros() {
+    assert!(is_valid_port("0080"));
+}
+
+#[test]
+fn rate_with_leading_zeros() {
+    assert!(is_valid_rate("048000"));
+}

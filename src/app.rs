@@ -181,6 +181,7 @@ impl Application for PulseStreamApp {
             Message::DeviceSelected(name) => {
                 self.state.selected_device =
                     self.state.devices.iter().find(|d| d.name == name).cloned();
+                self.save_settings();
             }
 
             Message::ProcessSelected(name) => {
@@ -209,7 +210,6 @@ impl Application for PulseStreamApp {
                 toggle_startup_registry(v);
                 self.save_settings();
             }
-            Message::ToggleMinimizeToTray(_) => {}
             Message::ToggleMuteLocalOutput(v) => {
                 self.state.mute_local_output = v;
                 self.save_settings();
@@ -302,6 +302,12 @@ impl Application for PulseStreamApp {
 
             Message::Tick => {
                 self.state.processes = crate::audio::get_audio_processes();
+                self.state.devices = crate::audio::get_output_devices();
+                if let Some(ref sel) = self.state.selected_device {
+                    if !self.state.devices.iter().any(|d| d.id == sel.id) {
+                        self.state.selected_device = self.state.devices.first().cloned();
+                    }
+                }
             }
             Message::Noop => {}
         }
