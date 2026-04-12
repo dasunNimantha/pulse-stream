@@ -54,11 +54,5 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build release
-        run: cargo build --release
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pulse-stream
-          path: target/release/pulse-stream.exe
+      - name: Build
+        run: cargo build
