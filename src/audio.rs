@@ -11,7 +11,9 @@ use windows::core::Interface;
 #[cfg(windows)]
 use windows::Win32::Foundation::*;
 #[cfg(windows)]
-use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+use windows::Win32::Media::Audio::Endpoints::{
+    IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallback_Impl,
+};
 #[cfg(windows)]
 use windows::Win32::Media::Audio::*;
 #[cfg(windows)]
@@ -375,6 +377,53 @@ impl IActivateAudioInterfaceCompletionHandler_Impl for ActivationHandler_Impl {
 }
 
 #[cfg(windows)]
+struct VolumeState {
+    volume: f32,
+    muted: bool,
+}
+
+#[cfg(windows)]
+#[windows::core::implement(IAudioEndpointVolumeCallback)]
+struct VolumeCallback {
+    state: Arc<Mutex<VolumeState>>,
+    mute_local_output: bool,
+    ep_vol: IAudioEndpointVolume,
+    tx: flume::Sender<AudioEvent>,
+}
+
+#[cfg(windows)]
+impl IAudioEndpointVolumeCallback_Impl for VolumeCallback_Impl {
+    fn OnNotify(&self, data: *mut AUDIO_VOLUME_NOTIFICATION_DATA) -> windows::core::Result<()> {
+        if data.is_null() {
+            return Ok(());
+        }
+        unsafe {
+            let new_vol = (*data).fMasterVolume;
+            let new_mute = (*data).bMuted.as_bool();
+
+            if self.mute_local_output && !new_mute {
+                let _ = self.ep_vol.SetMute(BOOL::from(true), std::ptr::null());
+            }
+
+            if let Ok(mut st) = self.state.lock() {
+                st.volume = new_vol;
+                st.muted = new_mute;
+            }
+
+            let _ = self.tx.send(AudioEvent::VolumeChanged {
+                volume: new_vol,
+                muted: if self.mute_local_output {
+                    true
+                } else {
+                    new_mute
+                },
+            });
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
 unsafe fn activate_process_loopback(pid: u32) -> Result<IAudioClient, Box<dyn std::error::Error>> {
     let params = AUDIOCLIENT_ACTIVATION_PARAMS {
         ActivationType: AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
@@ -485,24 +534,32 @@ fn do_stream(
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
         let device = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia)?;
 
-        // Always get volume from default device
         let ep_vol: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None)?;
-        let mut cached_volume = ep_vol.GetMasterVolumeLevelScalar()?;
-        let mut cached_mute = {
-            let b: BOOL = ep_vol.GetMute()?;
-            b.as_bool()
-        };
+        let init_volume = ep_vol.GetMasterVolumeLevelScalar()?;
+        let init_mute = ep_vol.GetMute()?.as_bool();
 
-        // Mute local speakers when requested; remember original state to restore later
-        let original_mute = cached_mute;
-        if mute_local_output && !cached_mute {
+        let original_mute = init_mute;
+        if mute_local_output && !init_mute {
             let _ = ep_vol.SetMute(BOOL::from(true), std::ptr::null());
-            cached_mute = true;
         }
 
+        let vol_state = Arc::new(Mutex::new(VolumeState {
+            volume: init_volume,
+            muted: if mute_local_output { true } else { init_mute },
+        }));
+
+        let vol_callback: IAudioEndpointVolumeCallback = VolumeCallback {
+            state: vol_state.clone(),
+            mute_local_output,
+            ep_vol: ep_vol.clone(),
+            tx: tx.clone(),
+        }
+        .into();
+        ep_vol.RegisterControlChangeNotify(&vol_callback)?;
+
         let _ = tx.send(AudioEvent::VolumeChanged {
-            volume: cached_volume,
-            muted: cached_mute,
+            volume: init_volume,
+            muted: if mute_local_output { true } else { init_mute },
         });
 
         // Raise capture thread priority so we're less likely to stall when dialogs open (e.g. Save)
@@ -655,12 +712,15 @@ fn do_stream(
 
                     let _ = capture.ReleaseBuffer(num_frames);
 
-                    let vol = if mute_local_output {
-                        cached_volume.max(0.01)
-                    } else if cached_mute {
-                        0.0f32
-                    } else {
-                        cached_volume
+                    let vol = {
+                        let st = vol_state.lock().unwrap();
+                        if mute_local_output {
+                            st.volume.max(0.01)
+                        } else if st.muted {
+                            0.0f32
+                        } else {
+                            st.volume
+                        }
                     };
                     let byte_len = sample_count * 2;
                     pcm_buf.clear();
@@ -689,7 +749,6 @@ fn do_stream(
                 }
             }
 
-            // Stats + volume poll (runs every iteration, even during silence)
             let now = Instant::now();
             let elapsed_ms = now.duration_since(prev_time).as_millis() as u64;
             if elapsed_ms >= 500 {
@@ -704,24 +763,6 @@ fn do_stream(
                 }));
                 prev_bytes = total_bytes;
                 prev_time = now;
-
-                if let (Ok(v), Ok(m)) = (ep_vol.GetMasterVolumeLevelScalar(), ep_vol.GetMute()) {
-                    let new_mute: bool = m.as_bool();
-
-                    // Re-mute if user's volume button unmuted the endpoint
-                    if mute_local_output && !new_mute {
-                        let _ = ep_vol.SetMute(BOOL::from(true), std::ptr::null());
-                    }
-
-                    if (v - cached_volume).abs() > 0.001 || new_mute != cached_mute {
-                        cached_volume = v;
-                        cached_mute = new_mute;
-                        let _ = tx.send(AudioEvent::VolumeChanged {
-                            volume: v,
-                            muted: if mute_local_output { true } else { new_mute },
-                        });
-                    }
-                }
             }
         }
 
@@ -730,8 +771,8 @@ fn do_stream(
 
         client.Stop()?;
         let _ = CloseHandle(event_handle);
+        let _ = ep_vol.UnregisterControlChangeNotify(&vol_callback);
 
-        // Restore original mute state when we muted the endpoint
         if mute_local_output && !original_mute {
             let _ = ep_vol.SetMute(BOOL::from(false), std::ptr::null());
         }
