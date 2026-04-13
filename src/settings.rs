@@ -24,6 +24,8 @@ pub struct AppSettings {
     pub mute_local_output: bool,
     #[serde(default = "default_true")]
     pub dark_theme: bool,
+    #[serde(default = "default_capture_mode")]
+    pub capture_mode: String,
 }
 
 fn default_server() -> String {
@@ -41,6 +43,9 @@ fn default_channels() -> u16 {
 fn default_true() -> bool {
     true
 }
+fn default_capture_mode() -> String {
+    "loopback".to_string()
+}
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -55,6 +60,7 @@ impl Default for AppSettings {
             minimize_to_tray: true,
             mute_local_output: false,
             dark_theme: true,
+            capture_mode: default_capture_mode(),
         }
     }
 }

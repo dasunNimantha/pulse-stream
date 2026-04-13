@@ -1,5 +1,6 @@
 use pulse_stream::audio::{
-    AudioEvent, AudioStreamer, DeviceInfo, ProcessInfo, Stats, StreamConfig, StreamState,
+    AudioEvent, AudioStreamer, CaptureMode, DeviceInfo, ProcessInfo, Stats, StreamConfig,
+    StreamState,
 };
 use std::time::Duration;
 
@@ -162,6 +163,7 @@ fn streamer_start_sets_running() {
         device_id: None,
         process_id: None,
         mute_local_output: false,
+        capture_mode: CaptureMode::WasapiLoopback,
     });
     assert!(streamer.is_running());
 
@@ -182,6 +184,7 @@ fn streamer_emits_events_on_connection_failure() {
         device_id: None,
         process_id: None,
         mute_local_output: false,
+        capture_mode: CaptureMode::WasapiLoopback,
     });
 
     std::thread::sleep(Duration::from_millis(500));
@@ -222,6 +225,7 @@ fn streamer_ignores_double_start() {
         device_id: None,
         process_id: None,
         mute_local_output: false,
+        capture_mode: CaptureMode::WasapiLoopback,
     });
     assert!(streamer.is_running());
 
@@ -233,6 +237,7 @@ fn streamer_ignores_double_start() {
         device_id: None,
         process_id: None,
         mute_local_output: false,
+        capture_mode: CaptureMode::WasapiLoopback,
     });
     assert!(streamer.is_running());
 
@@ -267,6 +272,7 @@ fn stream_config_construction() {
         device_id: Some("dev-1".to_string()),
         process_id: Some(1234),
         mute_local_output: true,
+        capture_mode: CaptureMode::WasapiLoopback,
     };
     assert_eq!(cfg.server, "10.0.0.1");
     assert_eq!(cfg.port, 5000);
@@ -275,6 +281,7 @@ fn stream_config_construction() {
     assert_eq!(cfg.device_id, Some("dev-1".to_string()));
     assert_eq!(cfg.process_id, Some(1234));
     assert!(cfg.mute_local_output);
+    assert_eq!(cfg.capture_mode, CaptureMode::WasapiLoopback);
 }
 
 #[test]
@@ -287,6 +294,7 @@ fn stream_config_none_fields() {
         device_id: None,
         process_id: None,
         mute_local_output: false,
+        capture_mode: CaptureMode::WasapiLoopback,
     };
     assert!(cfg.device_id.is_none());
     assert!(cfg.process_id.is_none());
@@ -368,6 +376,53 @@ fn streamer_default_equivalent_to_new() {
     assert!(!b.is_running());
 }
 
+// ==================== CaptureMode ====================
+
+#[test]
+fn capture_mode_clone() {
+    let mode = CaptureMode::VbCable;
+    let cloned = mode.clone();
+    assert_eq!(cloned, CaptureMode::VbCable);
+}
+
+#[test]
+fn capture_mode_eq() {
+    assert_eq!(CaptureMode::WasapiLoopback, CaptureMode::WasapiLoopback);
+    assert_eq!(CaptureMode::VbCable, CaptureMode::VbCable);
+    assert_ne!(CaptureMode::WasapiLoopback, CaptureMode::VbCable);
+}
+
+#[test]
+fn capture_mode_debug() {
+    let dbg = format!("{:?}", CaptureMode::WasapiLoopback);
+    assert!(dbg.contains("WasapiLoopback"));
+    let dbg = format!("{:?}", CaptureMode::VbCable);
+    assert!(dbg.contains("VbCable"));
+}
+
+#[test]
+fn stream_config_with_vbcable_mode() {
+    let cfg = StreamConfig {
+        server: "10.0.0.1".to_string(),
+        port: 4714,
+        rate: 48000,
+        channels: 2,
+        device_id: Some("vb-cable-id".to_string()),
+        process_id: None,
+        mute_local_output: false,
+        capture_mode: CaptureMode::VbCable,
+    };
+    assert_eq!(cfg.capture_mode, CaptureMode::VbCable);
+    assert_eq!(cfg.device_id, Some("vb-cable-id".to_string()));
+    assert!(!cfg.mute_local_output);
+}
+
+#[test]
+fn detect_vb_cable_does_not_crash() {
+    let result = pulse_stream::audio::detect_vb_cable();
+    let _ = result;
+}
+
 // ==================== Connection failure event order ====================
 
 #[test]
@@ -383,6 +438,7 @@ fn streamer_connection_failure_emits_events_in_order() {
         device_id: None,
         process_id: None,
         mute_local_output: false,
+        capture_mode: CaptureMode::WasapiLoopback,
     });
 
     std::thread::sleep(Duration::from_millis(500));

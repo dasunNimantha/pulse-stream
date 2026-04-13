@@ -61,6 +61,12 @@ pub enum AudioEvent {
     VolumeChanged { volume: f32, muted: bool },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CaptureMode {
+    WasapiLoopback,
+    VbCable,
+}
+
 pub struct StreamConfig {
     pub server: String,
     pub port: u16,
@@ -69,6 +75,7 @@ pub struct StreamConfig {
     pub device_id: Option<String>,
     pub process_id: Option<u32>,
     pub mute_local_output: bool,
+    pub capture_mode: CaptureMode,
 }
 
 pub struct AudioStreamer {
@@ -192,6 +199,155 @@ pub fn get_output_devices() -> Vec<DeviceInfo> {
         id: String::new(),
         name: "Default".to_string(),
     }]
+}
+
+#[cfg(windows)]
+pub fn detect_vb_cable() -> Option<DeviceInfo> {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+        let enumerator =
+            CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                .ok()?;
+
+        let collection = enumerator
+            .EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)
+            .ok()?;
+
+        let count = collection.GetCount().ok()?;
+
+        for i in 0..count {
+            let Ok(device) = collection.Item(i) else {
+                continue;
+            };
+            let name = get_device_name(&device)?;
+            if name.to_uppercase().contains("CABLE") {
+                let id_str = device
+                    .GetId()
+                    .ok()
+                    .map(|id| {
+                        let s = id.to_string().unwrap_or_default();
+                        CoTaskMemFree(Some(id.0 as *const _));
+                        s
+                    })
+                    .unwrap_or_default();
+                return Some(DeviceInfo { id: id_str, name });
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+pub fn detect_vb_cable() -> Option<DeviceInfo> {
+    None
+}
+
+/// Find the VB-CABLE **render** device (the playback side that apps send audio to).
+#[cfg(windows)]
+pub fn detect_vb_cable_render() -> Option<DeviceInfo> {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+        let enumerator =
+            CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                .ok()?;
+
+        let collection = enumerator
+            .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)
+            .ok()?;
+
+        let count = collection.GetCount().ok()?;
+
+        for i in 0..count {
+            let Ok(device) = collection.Item(i) else {
+                continue;
+            };
+            let name = get_device_name(&device)?;
+            if name.to_uppercase().contains("CABLE") {
+                let id_str = device
+                    .GetId()
+                    .ok()
+                    .map(|id| {
+                        let s = id.to_string().unwrap_or_default();
+                        CoTaskMemFree(Some(id.0 as *const _));
+                        s
+                    })
+                    .unwrap_or_default();
+                return Some(DeviceInfo { id: id_str, name });
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+pub fn detect_vb_cable_render() -> Option<DeviceInfo> {
+    None
+}
+
+/// Get the current default audio endpoint ID for a given role.
+#[cfg(windows)]
+unsafe fn get_default_endpoint_id(enumerator: &IMMDeviceEnumerator, role: ERole) -> Option<String> {
+    let device = enumerator.GetDefaultAudioEndpoint(eRender, role).ok()?;
+    let pwstr = device.GetId().ok()?;
+    let s = pwstr.to_string().unwrap_or_default();
+    CoTaskMemFree(Some(pwstr.0 as *const _));
+    Some(s)
+}
+
+/// Set the default audio endpoint for all roles using the undocumented IPolicyConfig interface.
+/// This is the same approach used by every audio-switching tool on Windows (stable since Vista).
+#[cfg(windows)]
+unsafe fn set_default_endpoint(device_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let clsid = windows::core::GUID::from_values(
+        0x870AF99C,
+        0x171D,
+        0x4F9E,
+        [0xAF, 0x0D, 0xE6, 0x3D, 0xF4, 0x0C, 0x2B, 0xC9],
+    );
+    let iid = windows::core::GUID::from_values(
+        0xF8679F50,
+        0x850A,
+        0x41CF,
+        [0x9C, 0x72, 0x43, 0x0F, 0x29, 0x02, 0x90, 0xC8],
+    );
+
+    extern "system" {
+        fn CoCreateInstance(
+            rclsid: *const windows::core::GUID,
+            punkouter: *const std::ffi::c_void,
+            dwclscontext: u32,
+            riid: *const windows::core::GUID,
+            ppv: *mut *mut std::ffi::c_void,
+        ) -> windows::core::HRESULT;
+    }
+
+    let mut obj: *mut std::ffi::c_void = std::ptr::null_mut();
+    CoCreateInstance(&clsid, std::ptr::null(), CLSCTX_ALL.0, &iid, &mut obj).ok()?;
+
+    if obj.is_null() {
+        return Err("IPolicyConfig creation failed".into());
+    }
+
+    let vtable = *(obj as *const *const usize);
+
+    type SetDefaultEndpointFn =
+        unsafe extern "system" fn(*mut std::ffi::c_void, *const u16, u32) -> windows::core::HRESULT;
+    type ReleaseFn = unsafe extern "system" fn(*mut std::ffi::c_void) -> u32;
+
+    let set_default: SetDefaultEndpointFn = std::mem::transmute(*vtable.add(13));
+    let release: ReleaseFn = std::mem::transmute(*vtable.add(2));
+
+    let wide: Vec<u16> = device_id.encode_utf16().chain(std::iter::once(0)).collect();
+
+    // eConsole = 0, eMultimedia = 1, eCommunications = 2
+    for role in 0..3u32 {
+        let _ = set_default(obj, wide.as_ptr(), role);
+    }
+
+    release(obj);
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -526,46 +682,119 @@ fn do_stream(
     )));
 
     let mut connection_lost = false;
+    let is_vbcable = cfg.capture_mode == CaptureMode::VbCable;
 
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
 
         let enumerator: IMMDeviceEnumerator =
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
-        let device = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia)?;
 
-        let ep_vol: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None)?;
-        let init_volume = ep_vol.GetMasterVolumeLevelScalar()?;
-        let init_mute = ep_vol.GetMute()?.as_bool();
-
-        let original_mute = init_mute;
-        if mute_local_output && !init_mute {
-            let _ = ep_vol.SetMute(BOOL::from(true), std::ptr::null());
-        }
-
+        let mut ep_vol: Option<IAudioEndpointVolume> = None;
+        let mut vol_callback: Option<IAudioEndpointVolumeCallback> = None;
+        let mut original_mute = false;
+        let mut original_default_id: Option<String> = None;
         let vol_state = Arc::new(Mutex::new(VolumeState {
-            volume: init_volume,
-            muted: if mute_local_output { true } else { init_mute },
+            volume: 1.0,
+            muted: false,
         }));
 
-        let vol_callback: IAudioEndpointVolumeCallback = VolumeCallback {
-            state: vol_state.clone(),
-            mute_local_output,
-            ep_vol: ep_vol.clone(),
-            tx: tx.clone(),
+        if is_vbcable {
+            let _ = tx.send(AudioEvent::Log("VB-CABLE mode".to_string()));
+
+            // Find VB-CABLE render device and switch Windows default output to it
+            if let Some(render_dev) = detect_vb_cable_render() {
+                original_default_id = get_default_endpoint_id(&enumerator, eMultimedia);
+
+                let current_default = original_default_id.as_deref().unwrap_or("");
+                if current_default != render_dev.id {
+                    let _ = tx.send(AudioEvent::Log(format!(
+                        "Switching output to: {}",
+                        render_dev.name
+                    )));
+                    let _ = set_default_endpoint(&render_dev.id);
+                } else {
+                    let _ = tx.send(AudioEvent::Log(
+                        "VB-CABLE already default output".to_string(),
+                    ));
+                    original_default_id = None;
+                }
+
+                // Monitor volume on the VB-CABLE render endpoint
+                let wide: Vec<u16> = render_dev
+                    .id
+                    .encode_utf16()
+                    .chain(std::iter::once(0))
+                    .collect();
+                if let Ok(render_device) =
+                    enumerator.GetDevice(windows::core::PCWSTR(wide.as_ptr()))
+                {
+                    if let Ok(vol) =
+                        render_device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None)
+                    {
+                        let init_volume = vol.GetMasterVolumeLevelScalar().unwrap_or(1.0);
+                        let init_mute = vol.GetMute().map(|b| b.as_bool()).unwrap_or(false);
+
+                        *vol_state.lock().unwrap() = VolumeState {
+                            volume: init_volume,
+                            muted: init_mute,
+                        };
+
+                        let cb: IAudioEndpointVolumeCallback = VolumeCallback {
+                            state: vol_state.clone(),
+                            mute_local_output: false,
+                            ep_vol: vol.clone(),
+                            tx: tx.clone(),
+                        }
+                        .into();
+                        let _ = vol.RegisterControlChangeNotify(&cb);
+
+                        let _ = tx.send(AudioEvent::VolumeChanged {
+                            volume: init_volume,
+                            muted: init_mute,
+                        });
+
+                        vol_callback = Some(cb);
+                        ep_vol = Some(vol);
+                    }
+                }
+            }
+        } else {
+            let device = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia)?;
+            let vol: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None)?;
+            let init_volume = vol.GetMasterVolumeLevelScalar()?;
+            let init_mute = vol.GetMute()?.as_bool();
+
+            original_mute = init_mute;
+            if mute_local_output && !init_mute {
+                let _ = vol.SetMute(BOOL::from(true), std::ptr::null());
+            }
+
+            *vol_state.lock().unwrap() = VolumeState {
+                volume: init_volume,
+                muted: if mute_local_output { true } else { init_mute },
+            };
+
+            let cb: IAudioEndpointVolumeCallback = VolumeCallback {
+                state: vol_state.clone(),
+                mute_local_output,
+                ep_vol: vol.clone(),
+                tx: tx.clone(),
+            }
+            .into();
+            vol.RegisterControlChangeNotify(&cb)?;
+
+            let _ = tx.send(AudioEvent::VolumeChanged {
+                volume: init_volume,
+                muted: if mute_local_output { true } else { init_mute },
+            });
+
+            vol_callback = Some(cb);
+            ep_vol = Some(vol);
         }
-        .into();
-        ep_vol.RegisterControlChangeNotify(&vol_callback)?;
 
-        let _ = tx.send(AudioEvent::VolumeChanged {
-            volume: init_volume,
-            muted: if mute_local_output { true } else { init_mute },
-        });
-
-        // Raise capture thread priority so we're less likely to stall when dialogs open (e.g. Save)
         let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
-        // 10ms buffer in 100ns units — low capture latency
         let buffer_duration: i64 = 100_000;
 
         let event_handle = CreateEventW(
@@ -575,61 +804,92 @@ fn do_stream(
             windows::core::PCWSTR::null(),
         )?;
 
-        // Branch: per-process or system-wide capture
-        let (client, src_rate_val, src_ch_val, src_bits_val, is_float) =
-            if let Some(pid) = process_id {
-                let _ = tx.send(AudioEvent::Log(format!("Per-app capture: PID {}", pid)));
-                let client = activate_process_loopback(pid)?;
+        let (client, src_rate_val, src_ch_val, src_bits_val, is_float) = if is_vbcable {
+            let vb_device_id = cfg.device_id.as_ref().ok_or("VB-CABLE device ID not set")?;
+            let wide: Vec<u16> = vb_device_id
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let device = enumerator.GetDevice(windows::core::PCWSTR(wide.as_ptr()))?;
+            let _ = tx.send(AudioEvent::Log(format!(
+                "Capturing from VB-CABLE: {}",
+                get_device_name(&device).unwrap_or_default()
+            )));
 
-                // Process loopback: use fixed 48kHz/2ch/f32 with AUTOCONVERTPCM
-                let mut fmt: WAVEFORMATEX = std::mem::zeroed();
-                fmt.wFormatTag = 3; // WAVE_FORMAT_IEEE_FLOAT
-                fmt.nChannels = 2;
-                fmt.nSamplesPerSec = 48000;
-                fmt.wBitsPerSample = 32;
-                fmt.nBlockAlign = 8;
-                fmt.nAvgBytesPerSec = 384000;
-                fmt.cbSize = 0;
+            let client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
+            let mix_format_ptr = client.GetMixFormat()?;
 
-                const AUTOCONVERTPCM: u32 = 0x80000000;
-                const SRC_DEFAULT_QUALITY: u32 = 0x08000000;
+            let src_rate_val = (*mix_format_ptr).nSamplesPerSec;
+            let src_ch_val = (*mix_format_ptr).nChannels;
+            let src_bits_val = (*mix_format_ptr).wBitsPerSample;
 
-                client.Initialize(
-                    AUDCLNT_SHAREMODE_SHARED,
-                    AUDCLNT_STREAMFLAGS_LOOPBACK
-                        | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
-                        | AUTOCONVERTPCM
-                        | SRC_DEFAULT_QUALITY,
-                    buffer_duration,
-                    0,
-                    &fmt,
-                    None,
-                )?;
+            client.Initialize(
+                AUDCLNT_SHAREMODE_SHARED,
+                AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                buffer_duration,
+                0,
+                &*mix_format_ptr,
+                None,
+            )?;
 
-                (client, 48000u32, 2u16, 32u16, true)
-            } else {
-                let client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
-                let mix_format_ptr = client.GetMixFormat()?;
+            let fmt_tag = (*mix_format_ptr).wFormatTag;
+            let is_float = fmt_tag == 3 || (fmt_tag == 0xFFFE && src_bits_val == 32);
+            CoTaskMemFree(Some(mix_format_ptr as *const _));
 
-                let src_rate_val = (*mix_format_ptr).nSamplesPerSec;
-                let src_ch_val = (*mix_format_ptr).nChannels;
-                let src_bits_val = (*mix_format_ptr).wBitsPerSample;
+            (client, src_rate_val, src_ch_val, src_bits_val, is_float)
+        } else if let Some(pid) = process_id {
+            let _ = tx.send(AudioEvent::Log(format!("Per-app capture: PID {}", pid)));
+            let client = activate_process_loopback(pid)?;
 
-                client.Initialize(
-                    AUDCLNT_SHAREMODE_SHARED,
-                    AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                    buffer_duration,
-                    0,
-                    &*mix_format_ptr,
-                    None,
-                )?;
+            let mut fmt: WAVEFORMATEX = std::mem::zeroed();
+            fmt.wFormatTag = 3; // WAVE_FORMAT_IEEE_FLOAT
+            fmt.nChannels = 2;
+            fmt.nSamplesPerSec = 48000;
+            fmt.wBitsPerSample = 32;
+            fmt.nBlockAlign = 8;
+            fmt.nAvgBytesPerSec = 384000;
+            fmt.cbSize = 0;
 
-                let fmt_tag = (*mix_format_ptr).wFormatTag;
-                let is_float = fmt_tag == 3 || (fmt_tag == 0xFFFE && src_bits_val == 32);
-                CoTaskMemFree(Some(mix_format_ptr as *const _));
+            const AUTOCONVERTPCM: u32 = 0x80000000;
+            const SRC_DEFAULT_QUALITY: u32 = 0x08000000;
 
-                (client, src_rate_val, src_ch_val, src_bits_val, is_float)
-            };
+            client.Initialize(
+                AUDCLNT_SHAREMODE_SHARED,
+                AUDCLNT_STREAMFLAGS_LOOPBACK
+                    | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
+                    | AUTOCONVERTPCM
+                    | SRC_DEFAULT_QUALITY,
+                buffer_duration,
+                0,
+                &fmt,
+                None,
+            )?;
+
+            (client, 48000u32, 2u16, 32u16, true)
+        } else {
+            let device = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia)?;
+            let client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
+            let mix_format_ptr = client.GetMixFormat()?;
+
+            let src_rate_val = (*mix_format_ptr).nSamplesPerSec;
+            let src_ch_val = (*mix_format_ptr).nChannels;
+            let src_bits_val = (*mix_format_ptr).wBitsPerSample;
+
+            client.Initialize(
+                AUDCLNT_SHAREMODE_SHARED,
+                AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                buffer_duration,
+                0,
+                &*mix_format_ptr,
+                None,
+            )?;
+
+            let fmt_tag = (*mix_format_ptr).wFormatTag;
+            let is_float = fmt_tag == 3 || (fmt_tag == 0xFFFE && src_bits_val == 32);
+            CoTaskMemFree(Some(mix_format_ptr as *const _));
+
+            (client, src_rate_val, src_ch_val, src_bits_val, is_float)
+        };
 
         let format_str = format!(
             "{:.1}kHz {}ch {}bit",
@@ -712,7 +972,7 @@ fn do_stream(
 
                     let vol = {
                         let st = vol_state.lock().unwrap();
-                        if mute_local_output {
+                        if !is_vbcable && mute_local_output {
                             st.volume.max(0.01)
                         } else if st.muted {
                             0.0f32
@@ -772,10 +1032,22 @@ fn do_stream(
 
         client.Stop()?;
         let _ = CloseHandle(event_handle);
-        let _ = ep_vol.UnregisterControlChangeNotify(&vol_callback);
 
-        if mute_local_output && !original_mute {
-            let _ = ep_vol.SetMute(BOOL::from(false), std::ptr::null());
+        if let (Some(ref vol), Some(ref cb)) = (&ep_vol, &vol_callback) {
+            let _ = vol.UnregisterControlChangeNotify(cb);
+        }
+
+        if !is_vbcable && mute_local_output && !original_mute {
+            if let Some(ref vol) = ep_vol {
+                let _ = vol.SetMute(BOOL::from(false), std::ptr::null());
+            }
+        }
+
+        if let Some(ref orig_id) = original_default_id {
+            let _ = tx.send(AudioEvent::Log(
+                "Restoring original output device".to_string(),
+            ));
+            let _ = set_default_endpoint(orig_id);
         }
     }
 

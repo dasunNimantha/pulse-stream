@@ -300,8 +300,92 @@ fn build_connection_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Mes
 }
 
 fn build_audio_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Message> {
-    let device_names: Vec<String> = state.devices.iter().map(|d| d.name.clone()).collect();
-    let selected_device = state.selected_device.as_ref().map(|d| d.name.clone());
+    let colors = get_colors(mode);
+    let is_vbcable = state.capture_mode == crate::audio::CaptureMode::VbCable;
+
+    let mut col: Column<Message> = column![].spacing(0);
+
+    if state.vb_cable_available {
+        let loopback_btn = {
+            let label = text("WASAPI Loopback").size(11);
+            let mut btn = button(label).padding([5, 10]);
+            if is_vbcable {
+                btn = btn
+                    .on_press(Message::CaptureModeChanged(
+                        crate::audio::CaptureMode::WasapiLoopback,
+                    ))
+                    .style(iced::theme::Button::Custom(Box::new(
+                        crate::theme::SecondaryButtonStyle { mode },
+                    )));
+            } else {
+                btn = btn.style(iced::theme::Button::Custom(Box::new(PrimaryButtonStyle {
+                    mode,
+                })));
+            }
+            btn
+        };
+
+        let vbcable_btn = {
+            let label = text("VB-CABLE").size(11);
+            let mut btn = button(label).padding([5, 10]);
+            if is_vbcable {
+                btn = btn.style(iced::theme::Button::Custom(Box::new(PrimaryButtonStyle {
+                    mode,
+                })));
+            } else {
+                btn = btn
+                    .on_press(Message::CaptureModeChanged(
+                        crate::audio::CaptureMode::VbCable,
+                    ))
+                    .style(iced::theme::Button::Custom(Box::new(
+                        crate::theme::SecondaryButtonStyle { mode },
+                    )));
+            }
+            btn
+        };
+
+        col = col.push(
+            row![
+                field_label("Mode", mode),
+                loopback_btn,
+                Space::with_width(6),
+                vbcable_btn,
+            ]
+            .align_items(Alignment::Center),
+        );
+        col = col.push(Space::with_height(10));
+    }
+
+    if !is_vbcable {
+        let device_names: Vec<String> = state.devices.iter().map(|d| d.name.clone()).collect();
+        let selected_device = state.selected_device.as_ref().map(|d| d.name.clone());
+        col = col.push(
+            row![
+                field_label("Device", mode),
+                pick_list(device_names, selected_device, Message::DeviceSelected)
+                    .padding([6, 10])
+                    .text_size(13)
+                    .width(Length::Fill)
+                    .style(iced::theme::PickList::Custom(
+                        std::rc::Rc::new(PickListStyle { mode }),
+                        std::rc::Rc::new(MenuStyle { mode }),
+                    )),
+            ]
+            .align_items(Alignment::Center),
+        );
+        col = col.push(Space::with_height(8));
+    } else {
+        col = col.push(
+            row![
+                field_label("Source", mode),
+                text("VB-Audio Virtual Cable")
+                    .size(12)
+                    .style(iced::theme::Text::Color(colors.text_secondary)),
+            ]
+            .align_items(Alignment::Center),
+        );
+        col = col.push(Space::with_height(10));
+    }
 
     let mut process_names: Vec<String> = vec!["All apps (system audio)".to_string()];
     process_names.extend(state.processes.iter().map(|p| p.name.clone()));
@@ -310,20 +394,7 @@ fn build_audio_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Message>
         .clone()
         .unwrap_or_else(|| "All apps (system audio)".to_string());
 
-    column![
-        row![
-            field_label("Device", mode),
-            pick_list(device_names, selected_device, Message::DeviceSelected)
-                .padding([6, 10])
-                .text_size(13)
-                .width(Length::Fill)
-                .style(iced::theme::PickList::Custom(
-                    std::rc::Rc::new(PickListStyle { mode }),
-                    std::rc::Rc::new(MenuStyle { mode }),
-                )),
-        ]
-        .align_items(Alignment::Center),
-        Space::with_height(6),
+    col = col.push(
         row![
             field_label("App", mode),
             pick_list(
@@ -340,9 +411,9 @@ fn build_audio_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Message>
             )),
         ]
         .align_items(Alignment::Center),
-    ]
-    .spacing(0)
-    .into()
+    );
+
+    col.into()
 }
 
 fn build_format_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Message> {
@@ -381,7 +452,9 @@ fn build_format_fields(state: &AppState, mode: ThemeMode) -> Element<'_, Message
 }
 
 fn build_options_row(state: &AppState, mode: ThemeMode) -> Element<'_, Message> {
-    row![
+    let is_vbcable = state.capture_mode == crate::audio::CaptureMode::VbCable;
+
+    let mut opts = row![
         checkbox("Auto-connect", state.auto_connect)
             .on_toggle(Message::ToggleAutoConnect)
             .size(14)
@@ -395,16 +468,21 @@ fn build_options_row(state: &AppState, mode: ThemeMode) -> Element<'_, Message> 
             .spacing(5)
             .text_size(11)
             .style(iced::theme::Checkbox::Custom(Box::new(CheckStyle { mode }))),
-        Space::with_width(Length::Fill),
-        checkbox("Mute local output", state.mute_local_output)
-            .on_toggle(Message::ToggleMuteLocalOutput)
-            .size(14)
-            .spacing(5)
-            .text_size(11)
-            .style(iced::theme::Checkbox::Custom(Box::new(CheckStyle { mode }))),
     ]
-    .align_items(Alignment::Center)
-    .into()
+    .align_items(Alignment::Center);
+
+    if !is_vbcable {
+        opts = opts.push(Space::with_width(Length::Fill)).push(
+            checkbox("Mute local output", state.mute_local_output)
+                .on_toggle(Message::ToggleMuteLocalOutput)
+                .size(14)
+                .spacing(5)
+                .text_size(11)
+                .style(iced::theme::Checkbox::Custom(Box::new(CheckStyle { mode }))),
+        );
+    }
+
+    opts.into()
 }
 
 fn build_action_button(state: &AppState, mode: ThemeMode) -> Element<'_, Message> {

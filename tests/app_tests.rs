@@ -1,5 +1,5 @@
 use pulse_stream::app::AppState;
-use pulse_stream::audio::{AudioEvent, DeviceInfo, Stats, StreamState};
+use pulse_stream::audio::{AudioEvent, CaptureMode, DeviceInfo, Stats, StreamState};
 use pulse_stream::message::Message;
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -29,6 +29,8 @@ fn default_state() -> AppState {
         selected_process: None,
         log_messages: VecDeque::new(),
         scanning: false,
+        capture_mode: CaptureMode::WasapiLoopback,
+        vb_cable_available: false,
     }
 }
 
@@ -71,15 +73,8 @@ fn device_selected_updates_selection() {
         id: "dev-1".to_string(),
         name: "Speakers".to_string(),
     });
-    state.selected_device = state
-        .devices
-        .iter()
-        .find(|d| d.name == "Speakers")
-        .cloned();
-    assert_eq!(
-        state.selected_device.as_ref().unwrap().name,
-        "Speakers"
-    );
+    state.selected_device = state.devices.iter().find(|d| d.name == "Speakers").cloned();
+    assert_eq!(state.selected_device.as_ref().unwrap().name, "Speakers");
 }
 
 #[test]
@@ -423,6 +418,37 @@ fn device_refresh_resets_to_default_if_removed() {
         }
     }
     assert_eq!(state.selected_device.as_ref().unwrap().name, "Default");
+}
+
+// ==================== Capture mode ====================
+
+#[test]
+fn capture_mode_toggle_to_vbcable() {
+    let mut state = default_state();
+    assert_eq!(state.capture_mode, CaptureMode::WasapiLoopback);
+    state.capture_mode = CaptureMode::VbCable;
+    assert_eq!(state.capture_mode, CaptureMode::VbCable);
+}
+
+#[test]
+fn capture_mode_toggle_back_to_loopback() {
+    let mut state = default_state();
+    state.capture_mode = CaptureMode::VbCable;
+    state.capture_mode = CaptureMode::WasapiLoopback;
+    assert_eq!(state.capture_mode, CaptureMode::WasapiLoopback);
+}
+
+#[test]
+fn vb_cable_available_defaults_false() {
+    let state = default_state();
+    assert!(!state.vb_cable_available);
+}
+
+#[test]
+fn vb_cable_available_can_be_set() {
+    let mut state = default_state();
+    state.vb_cable_available = true;
+    assert!(state.vb_cable_available);
 }
 
 // ==================== Message construction ====================

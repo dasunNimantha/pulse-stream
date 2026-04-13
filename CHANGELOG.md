@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.6] - 2026-04-12
+
+### Added
+- **VB-CABLE capture mode** — optional alternative to WASAPI loopback; detects if VB-CABLE is installed and offers it as a capture source in the Audio Source section
+- **Auto output device switching** — when VB-CABLE mode is selected, automatically switches Windows default output to VB-CABLE's render device; restores the original device on disconnect
+- **Volume control in VB-CABLE mode** — monitors VB-CABLE render endpoint volume so system volume keys work normally instead of always streaming at full volume
+- `detect_vb_cable()` and `detect_vb_cable_render()` for discovering VB-CABLE capture and render devices
+- `IPolicyConfig`-based `set_default_endpoint()` for programmatic audio device switching
+- `capture_mode` persisted in settings with serde default (`"loopback"`)
+- Tests for `CaptureMode`, `detect_vb_cable`, `StreamConfig`, settings round-trip, and message variants
+
+### Changed
+- Audio Source section shows Mode toggle (WASAPI Loopback / VB-CABLE) when VB-CABLE is detected
+- Device picker and "Mute local output" checkbox hidden when VB-CABLE mode is active
+- Window height increased from 465px to 500px to accommodate new UI elements
+- Improved spacing in Audio Source section for better readability
+
 ## [0.1.5] - 2026-04-12
 
 ### Fixed

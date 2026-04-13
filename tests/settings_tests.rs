@@ -14,6 +14,7 @@ fn default_settings_values() {
     assert!(s.minimize_to_tray);
     assert!(!s.mute_local_output);
     assert!(s.dark_theme);
+    assert_eq!(s.capture_mode, "loopback");
 }
 
 #[test]
@@ -29,6 +30,7 @@ fn settings_serialization_roundtrip() {
         minimize_to_tray: false,
         mute_local_output: true,
         dark_theme: false,
+        capture_mode: "vbcable".to_string(),
     };
 
     let json = serde_json::to_string(&original).unwrap();
@@ -44,6 +46,7 @@ fn settings_serialization_roundtrip() {
     assert!(!restored.minimize_to_tray);
     assert!(restored.mute_local_output);
     assert!(!restored.dark_theme);
+    assert_eq!(restored.capture_mode, "vbcable");
 }
 
 #[test]
@@ -144,6 +147,33 @@ fn settings_pretty_json_is_valid() {
     assert_eq!(restored.rate, s.rate);
 }
 
+// ==================== Capture mode ====================
+
+#[test]
+fn settings_capture_mode_defaults_loopback() {
+    let json = "{}";
+    let s: AppSettings = serde_json::from_str(json).unwrap();
+    assert_eq!(s.capture_mode, "loopback");
+}
+
+#[test]
+fn settings_capture_mode_vbcable_roundtrip() {
+    let original = AppSettings {
+        capture_mode: "vbcable".to_string(),
+        ..AppSettings::default()
+    };
+    let json = serde_json::to_string(&original).unwrap();
+    let restored: AppSettings = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored.capture_mode, "vbcable");
+}
+
+#[test]
+fn settings_capture_mode_missing_field_defaults() {
+    let json = r#"{"server": "10.0.0.1"}"#;
+    let s: AppSettings = serde_json::from_str(json).unwrap();
+    assert_eq!(s.capture_mode, "loopback");
+}
+
 // ==================== Disk I/O round-trip tests ====================
 
 #[test]
@@ -163,6 +193,7 @@ fn settings_save_load_roundtrip_on_disk() {
         minimize_to_tray: false,
         mute_local_output: true,
         dark_theme: false,
+        capture_mode: "loopback".to_string(),
     };
 
     let path = dir.join("settings.json");

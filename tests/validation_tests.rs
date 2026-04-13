@@ -1,5 +1,5 @@
 use pulse_stream::app::AppState;
-use pulse_stream::audio::{DeviceInfo, StreamState};
+use pulse_stream::audio::{CaptureMode, DeviceInfo, StreamState};
 
 use pulse_stream::view::{
     all_fields_valid, is_valid_channels, is_valid_port, is_valid_rate, is_valid_server,
@@ -30,6 +30,8 @@ fn default_state() -> AppState {
         selected_process: None,
         log_messages: std::collections::VecDeque::new(),
         scanning: false,
+        capture_mode: CaptureMode::WasapiLoopback,
+        vb_cable_available: false,
     }
 }
 

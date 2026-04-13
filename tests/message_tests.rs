@@ -1,4 +1,4 @@
-use pulse_stream::audio::{AudioEvent, Stats, StreamState};
+use pulse_stream::audio::{AudioEvent, CaptureMode, Stats, StreamState};
 use pulse_stream::message::Message;
 use std::time::Duration;
 
@@ -54,6 +54,21 @@ fn message_process_selected_constructable() {
     let msg = Message::ProcessSelected("firefox".to_string());
     let dbg = format!("{:?}", msg);
     assert!(dbg.contains("ProcessSelected"));
+}
+
+#[test]
+fn message_capture_mode_changed_constructable() {
+    let msg = Message::CaptureModeChanged(CaptureMode::VbCable);
+    let dbg = format!("{:?}", msg);
+    assert!(dbg.contains("CaptureModeChanged"));
+    assert!(dbg.contains("VbCable"));
+}
+
+#[test]
+fn message_capture_mode_changed_loopback() {
+    let msg = Message::CaptureModeChanged(CaptureMode::WasapiLoopback);
+    let dbg = format!("{:?}", msg);
+    assert!(dbg.contains("WasapiLoopback"));
 }
 
 #[test]

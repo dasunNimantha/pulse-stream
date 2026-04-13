@@ -1,4 +1,4 @@
-use crate::audio::AudioEvent;
+use crate::audio::{AudioEvent, CaptureMode};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -10,6 +10,7 @@ pub enum Message {
     ChannelsChanged(String),
     DeviceSelected(String),
     ProcessSelected(String),
+    CaptureModeChanged(CaptureMode),
 
     ToggleAutoConnect(bool),
     ToggleStartWithWindows(bool),

@@ -8,7 +8,7 @@ fn main() -> iced::Result {
     PulseStreamApp::run(Settings {
         flags: start_minimized,
         window: iced::window::Settings {
-            size: iced::Size::new(420.0, 465.0),
+            size: iced::Size::new(420.0, 500.0),
             resizable: false,
             exit_on_close_request: false,
             ..Default::default()

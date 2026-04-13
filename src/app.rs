@@ -1,4 +1,4 @@
-use crate::audio::{AudioEvent, AudioStreamer, DeviceInfo, ProcessInfo, StreamState};
+use crate::audio::{AudioEvent, AudioStreamer, CaptureMode, DeviceInfo, ProcessInfo, StreamState};
 use crate::message::Message;
 use crate::settings::AppSettings;
 use crate::theme::{pulse_theme, ThemeMode};
@@ -28,6 +28,8 @@ pub struct AppState {
     pub selected_process: Option<String>,
     pub log_messages: std::collections::VecDeque<String>,
     pub scanning: bool,
+    pub capture_mode: CaptureMode,
+    pub vb_cable_available: bool,
 }
 
 pub struct PulseStreamApp {
@@ -53,6 +55,12 @@ impl Application for PulseStreamApp {
 
         let devices = crate::audio::get_output_devices();
         let processes = crate::audio::get_audio_processes();
+        let vb_cable_available = crate::audio::detect_vb_cable().is_some();
+        let capture_mode = if settings.capture_mode == "vbcable" && vb_cable_available {
+            CaptureMode::VbCable
+        } else {
+            CaptureMode::WasapiLoopback
+        };
 
         let selected_device = if let Some(ref saved_id) = settings.device_id {
             devices.iter().find(|d| &d.id == saved_id).cloned()
@@ -87,6 +95,8 @@ impl Application for PulseStreamApp {
             selected_process: None,
             log_messages: std::collections::VecDeque::new(),
             scanning: false,
+            capture_mode,
+            vb_cable_available,
         };
 
         let (tray_icon, tray_exit_id) = create_tray_icon();
@@ -157,15 +167,24 @@ impl Application for PulseStreamApp {
                         .map(|p| p.pid)
                 });
 
+                let (final_device_id, final_mute) =
+                    if self.state.capture_mode == CaptureMode::VbCable {
+                        let vb_id = crate::audio::detect_vb_cable().map(|d| d.id);
+                        (vb_id, false)
+                    } else {
+                        (device_id, self.state.mute_local_output)
+                    };
+
                 self.save_settings();
                 self.streamer.start(crate::audio::StreamConfig {
                     server,
                     port,
                     rate,
                     channels,
-                    device_id,
+                    device_id: final_device_id,
                     process_id,
-                    mute_local_output: self.state.mute_local_output,
+                    mute_local_output: final_mute,
+                    capture_mode: self.state.capture_mode.clone(),
                 });
             }
 
@@ -192,6 +211,18 @@ impl Application for PulseStreamApp {
                 } else {
                     self.state.selected_process = Some(name);
                 }
+
+                if was_streaming {
+                    self.streamer.stop();
+                    self.state.log_messages.clear();
+                    return self.update(Message::Connect);
+                }
+            }
+
+            Message::CaptureModeChanged(mode) => {
+                let was_streaming = !matches!(self.state.stream_state, StreamState::Disconnected);
+                self.state.capture_mode = mode;
+                self.save_settings();
 
                 if was_streaming {
                     self.streamer.stop();
@@ -303,6 +334,7 @@ impl Application for PulseStreamApp {
             Message::Tick => {
                 self.state.processes = crate::audio::get_audio_processes();
                 self.state.devices = crate::audio::get_output_devices();
+                self.state.vb_cable_available = crate::audio::detect_vb_cable().is_some();
                 if let Some(ref sel) = self.state.selected_device {
                     if !self.state.devices.iter().any(|d| d.id == sel.id) {
                         self.state.selected_device = self.state.devices.first().cloned();
@@ -401,6 +433,10 @@ impl PulseStreamApp {
             minimize_to_tray: self.state.minimize_to_tray,
             mute_local_output: self.state.mute_local_output,
             dark_theme: self.theme_mode == ThemeMode::Dark,
+            capture_mode: match self.state.capture_mode {
+                CaptureMode::VbCable => "vbcable".to_string(),
+                CaptureMode::WasapiLoopback => "loopback".to_string(),
+            },
         };
         let _ = settings.save();
     }
