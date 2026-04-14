@@ -11,7 +11,7 @@ iced_aw = { version = "0.9", default-features = false, features = ["icons"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-directories = "5"
+directories = "6"
 flume = "0.12"
 tray-icon = "0.22.0"
 
