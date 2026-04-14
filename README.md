@@ -9,6 +9,7 @@ Stream Windows audio to a Linux machine over TCP using ALSA. Built with Rust and
 ## Features
 
 - **WASAPI loopback capture** — captures system audio with low latency using Windows Audio Session API
+- **VB-CABLE capture mode** — optional alternative that captures from [VB-CABLE](https://vb-audio.com/Cable/) virtual audio device; auto-detected when installed, no local speaker output and no mute workaround needed
 - **Per-app audio capture** — isolate and stream audio from a single application via process loopback
 - **Auto server discovery** — scans the local subnet to find receivers
 - **Real-time stats** — displays bandwidth, latency, capture format, and uptime
@@ -51,7 +52,7 @@ cargo run
 cargo test
 ```
 
-72 tests cover input validation, settings serialization, audio streamer lifecycle, and theme properties.
+193 tests cover input validation, settings serialization, audio streamer lifecycle, theme properties, capture mode, and app state transitions.
 
 ## Usage
 
@@ -149,6 +150,29 @@ The receiver script handles stale connections internally — it kills any leftov
 3. Select an audio device and optionally a specific application
 4. Click **Connect**
 
+### VB-CABLE mode (optional)
+
+By default, PulseStream captures audio via WASAPI loopback on the default speaker and mutes it so sound only plays on the receiver. **VB-CABLE** provides a cleaner alternative — audio never reaches physical speakers at all.
+
+**How it works:**
+
+```
+WASAPI Loopback:   Apps → Speaker → Loopback Capture → PulseStream
+VB-CABLE:          Apps → VB-CABLE Output → VB-CABLE Input → PulseStream
+```
+
+**Setup:**
+
+1. Download and install [VB-CABLE](https://vb-audio.com/Cable/) (free)
+2. Restart PulseStream — a **Mode** toggle appears in the Audio Source section
+3. Select **VB-CABLE** — PulseStream automatically:
+   - Switches your Windows default output to VB-CABLE
+   - Captures from VB-CABLE's input side
+   - Routes system volume keys to control the stream level
+4. When you disconnect or switch back, the original output device is restored
+
+> VB-CABLE is freeware and cannot be bundled. PulseStream only detects it — install it yourself from [vb-audio.com/Cable](https://vb-audio.com/Cable/).
+
 ### Configuration
 
 Settings are stored at:
@@ -168,6 +192,7 @@ Settings are stored at:
 | `start_with_windows` | `true` | Register in Windows startup       |
 | `minimize_to_tray`| `true`  | Start hidden in tray; minimize on close |
 | `mute_local_output`| `false` | Mute laptop speakers while streaming |
+| `capture_mode`    | `"loopback"` | Capture mode: `"loopback"` or `"vbcable"` |
 | `dark_theme`      | `true`  | Dark mode enabled                  |
 
 **Key design decisions:**
@@ -185,7 +210,7 @@ Streaming audio from a Windows PC to a Linux machine typically requires third-pa
 - **No per-app isolation** — you stream everything or nothing, with no way to pick a single application
 - **Heavy dependencies** — requiring virtual audio drivers or complex audio server configurations on Windows
 
-PulseStream solves this by using WASAPI loopback capture to read audio directly from the Windows audio engine and streaming raw PCM over a simple TCP socket to an ALSA receiver on Linux. No encoding, no virtual drivers, minimal dependencies on both ends.
+PulseStream solves this by using WASAPI loopback capture to read audio directly from the Windows audio engine and streaming raw PCM over a simple TCP socket to an ALSA receiver on Linux. No encoding, minimal dependencies on both ends. An optional VB-CABLE mode provides silent local output without the mute workaround.
 
 ## Latency
 
