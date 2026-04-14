@@ -17,7 +17,7 @@ tray-icon = "0.21.3"
 
 [target.'cfg(windows)'.dependencies]
 windows-core = "0.58"
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "implement",
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
