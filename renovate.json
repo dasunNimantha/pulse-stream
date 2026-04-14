@@ -5,6 +5,7 @@
   ],
   "platformAutomerge": true,
   "minimumReleaseAge": "7 days",
+  "recreateWhen": "always",
   "packageRules": [
     {
       "matchUpdateTypes": ["minor", "patch"],
