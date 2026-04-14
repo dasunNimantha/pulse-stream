@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7] - 2026-04-14
+
+### Changed
+- **Upgraded `windows`/`windows-core` from 0.58 to 0.62** — adapted to API changes: native `bool` replaces `BOOL`, `PROPERTYKEY` relocated, COM callbacks use `Ref<>`, `implement` feature removed (now built-in)
+- Updated `directories` to v6, `tray-icon` to 0.22.0, `tokio` to v1.51.0, `actions/checkout` to v6
+- Renovate config: set `recreateWhen: "always"` to prevent closed PRs from blocking future updates
+
 ## [0.1.6] - 2026-04-12
 
 ### Added
