@@ -357,7 +357,7 @@ unsafe fn get_device_name(device: &IMMDevice) -> Option<String> {
     let store: IPropertyStore = device.OpenPropertyStore(STGM(0)).ok()?;
 
     // PKEY_Device_FriendlyName
-    let key = windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY {
+    let key = PROPERTYKEY {
         fmtid: windows::core::GUID::from_values(
             0xa45c254e,
             0xdf1c,
@@ -523,7 +523,7 @@ struct ActivationHandler {
 impl IActivateAudioInterfaceCompletionHandler_Impl for ActivationHandler_Impl {
     fn ActivateCompleted(
         &self,
-        _op: Option<&IActivateAudioInterfaceAsyncOperation>,
+        _op: windows_core::Ref<'_, IActivateAudioInterfaceAsyncOperation>,
     ) -> windows::core::Result<()> {
         let (lock, cvar) = &*self.event;
         *lock.lock().unwrap() = true;
@@ -558,7 +558,7 @@ impl IAudioEndpointVolumeCallback_Impl for VolumeCallback_Impl {
             let new_mute = (*data).bMuted.as_bool();
 
             if self.mute_local_output && !new_mute {
-                let _ = self.ep_vol.SetMute(BOOL::from(true), std::ptr::null());
+                let _ = self.ep_vol.SetMute(true, std::ptr::null());
             }
 
             if let Ok(mut st) = self.state.lock() {
@@ -767,7 +767,7 @@ fn do_stream(
 
             original_mute = init_mute;
             if mute_local_output && !init_mute {
-                let _ = vol.SetMute(BOOL::from(true), std::ptr::null());
+                let _ = vol.SetMute(true, std::ptr::null());
             }
 
             *vol_state.lock().unwrap() = VolumeState {
@@ -797,12 +797,7 @@ fn do_stream(
 
         let buffer_duration: i64 = 100_000;
 
-        let event_handle = CreateEventW(
-            None,
-            BOOL::from(false),
-            BOOL::from(false),
-            windows::core::PCWSTR::null(),
-        )?;
+        let event_handle = CreateEventW(None, false, false, windows::core::PCWSTR::null())?;
 
         let (client, src_rate_val, src_ch_val, src_bits_val, is_float) = if is_vbcable {
             let vb_device_id = cfg.device_id.as_ref().ok_or("VB-CABLE device ID not set")?;
@@ -1039,7 +1034,7 @@ fn do_stream(
 
         if !is_vbcable && mute_local_output && !original_mute {
             if let Some(ref vol) = ep_vol {
-                let _ = vol.SetMute(BOOL::from(false), std::ptr::null());
+                let _ = vol.SetMute(false, std::ptr::null());
             }
         }
 

@@ -16,9 +16,8 @@ flume = "0.12"
 tray-icon = "0.22.0"
 
 [target.'cfg(windows)'.dependencies]
-windows-core = "0.58"
-windows = { version = "0.58", features = [
-    "implement",
+windows-core = "0.62"
+windows = { version = "0.62", features = [
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",
