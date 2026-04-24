@@ -7,7 +7,7 @@ build = "build.rs"
 
 [dependencies]
 iced = { version = "0.12", features = ["tokio"] }
-iced_aw = { version = "0.9", default-features = false, features = ["icons"] }
+iced_aw = { version = "0.13", default-features = false, features = ["icons"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
