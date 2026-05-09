@@ -60,10 +60,12 @@ cargo test
 
 The receiver script listens on a TCP port and pipes audio straight to ALSA with a small buffer for low-latency playback:
 
+> **Port note:** PulseAudio's network protocol uses `4713`–`4714` by default. If your receiver host also runs PulseAudio (e.g. a multi-purpose audio LXC), pick a non-conflicting port like `4715`. Otherwise PulseAudio will grab the port first and silently consume your stream as protocol garbage.
+
 ```bash
 #!/bin/bash
 # pulse-stream-recv.sh — low-latency TCP-to-ALSA receiver
-PORT=${1:-4714}
+PORT=${1:-4715}
 RATE=48000
 CHANNELS=2
 FORMAT=S16_LE
@@ -94,7 +96,7 @@ Make it executable and run:
 
 ```bash
 chmod +x pulse-stream-recv.sh
-./pulse-stream-recv.sh 4714
+./pulse-stream-recv.sh 4715
 ```
 
 > Requires `ncat` (from nmap) and `alsa-utils`. Install with:
@@ -122,7 +124,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/pulse-stream-recv.sh 4714
+ExecStart=/usr/local/bin/pulse-stream-recv.sh 4715
 Restart=always
 RestartSec=3
 
@@ -142,6 +144,19 @@ sudo systemctl start pulse-stream-recv.service
 Check status with `systemctl status pulse-stream-recv.service`. The service automatically restarts when a stream disconnects and is ready for the next connection.
 
 The receiver script handles stale connections internally — it kills any leftover `ncat` process holding the port before each listen cycle. Combined with systemd's `Restart=always`, no external watchdog is needed.
+
+#### Troubleshooting
+
+**Receiver logs `Ncat: bind to [::]:<port>: Address already in use. QUITTING.`**
+
+Something else owns the port. Check with `ss -tlnp | grep <port>`. The most common offender on shared audio hosts is PulseAudio (`pulseaudio` process holding `4713`/`4714`). Either:
+
+- Move the receiver to a free port (e.g. `4715`) by editing `ExecStart=` in the unit file and running `systemctl daemon-reload && systemctl restart pulse-stream-recv.service`, then update the port in the Windows app, **or**
+- Stop PulseAudio if it's not needed: `systemctl stop pulseaudio.service && systemctl disable pulseaudio.service`
+
+**Connection succeeds but no audio plays**
+
+`ncat` is forwarding bytes to the wrong ALSA device, or another process has it. Run `aplay -l` to list devices and update `-D default` in the script to the correct hardware (e.g. `-D plughw:0,0`). Check `fuser -v /dev/snd/*` for processes holding the device.
 
 ### Sender setup (Windows)
 
@@ -184,7 +199,7 @@ Settings are stored at:
 | Setting           | Default | Description                        |
 | ----------------- | ------- | ---------------------------------- |
 | `server`          | *(empty — triggers auto-scan)* | Receiver IP |
-| `port`            | `4714`  | TCP port                           |
+| `port`            | `4714`  | TCP port (use `4715` if PulseAudio runs on the receiver) |
 | `rate`            | `48000` | Sample rate in Hz                  |
 | `channels`        | `2`     | Channel count (1–8)                |
 | `device_id`       | `null`  | Audio output device (null = default) |
