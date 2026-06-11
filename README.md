@@ -69,9 +69,11 @@ PORT=${1:-4715}
 RATE=48000
 CHANNELS=2
 FORMAT=S16_LE
-# Buffer: 256 frames × 2 periods = ~10ms at 48kHz
-BUFFER_FRAMES=256
+# ALSA buffer/period are measured in FRAMES (not bytes).
+# 256-frame period × 2 periods = 512-frame buffer = ~10.7ms at 48kHz.
+PERIOD_FRAMES=256
 PERIODS=2
+BUFFER_FRAMES=$((PERIOD_FRAMES * PERIODS))
 
 while true; do
   # Kill any stale ncat still holding the port from a previous cycle
@@ -83,9 +85,9 @@ while true; do
     -f "$FORMAT" \
     -r "$RATE" \
     -c "$CHANNELS" \
-    --buffer-size=$((BUFFER_FRAMES * CHANNELS * 2 * PERIODS)) \
-    --period-size=$((BUFFER_FRAMES * CHANNELS * 2)) \
-    -D default \
+    --buffer-size=$BUFFER_FRAMES \
+    --period-size=$PERIOD_FRAMES \
+    -D plughw:0,0 \
     2>/dev/null
 
   sleep 0.5
@@ -246,6 +248,8 @@ The sender side (WASAPI capture → TCP send) adds ~12 ms total. The **ALSA rece
 ### Additional tips
 
 - Use a **wired Ethernet** connection — WiFi adds jitter and occasional 5–20 ms spikes
+- **Output directly to hardware** with `-D plughw:X,Y` (find the index via `aplay -l`) rather than `-D default`. On hosts running PulseAudio/PipeWire, `default` routes through the sound server and adds an extra buffering layer (often 20–40 ms)
+- Remember that `aplay`'s `--buffer-size`/`--period-size` are in **frames**, not bytes — a 256-frame period at 48 kHz is ~5.3 ms. Multiplying by channels/bytes-per-sample silently inflates the buffer (e.g. 4× for S16 stereo) and is a common cause of unexpected delay
 
 ## Limitations
 
